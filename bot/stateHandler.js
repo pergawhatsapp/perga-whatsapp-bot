@@ -37,13 +37,11 @@ async function saveState(whatsapp, state) {
 /* =========================
    MAIN HANDLER
 ========================= */
-async function handleMessage(from, body, req) {
+async function handleMessage(from, body) {
   const twiml = new MessagingResponse();
   const message = body.trim().toLowerCase();
 
   let state = await getState(from);
-   
-  }
 
   /* ========= START ========= */
   if (!state && message === 'order') {
@@ -74,8 +72,7 @@ async function handleMessage(from, body, req) {
     });
 
     const productList = PRODUCTS.map(
-      p =>
-        `${p.id}. ${lang === 'es' ? p.name_es : p.name_en}`
+      p => `${p.id}. ${lang === 'es' ? p.name_es : p.name_en}`
     ).join('\n');
 
     twiml.message(
@@ -104,22 +101,20 @@ async function handleMessage(from, body, req) {
 
     if (selected.length === 0) {
       twiml.message(
-        state.language === 'es'
-          ? 'Selección inválida.'
-          : 'Invalid selection.'
+        state.language === 'es' ? 'Selección inválida.' : 'Invalid selection.'
       );
       return twiml.toString();
     }
 
-    state.temp_data = {
+    const temp_data = {
       selected_products: selected,
       current_product_index: 0
     };
 
     await saveState(from, {
       ...state,
-      order_items: state.order_items,
-      temp_data: state.temp_data
+      current_step: 'ASK_QUANTITY',
+      temp_data
     });
 
     const product = PRODUCTS.find(p => p.key === selected[0]);
@@ -149,21 +144,20 @@ async function handleMessage(from, body, req) {
     const index = state.temp_data.current_product_index;
     const productKey = state.temp_data.selected_products[index];
 
-    state.order_items = state.order_items || {};
-    state.order_items[productKey] = qty;
+    const order_items = state.order_items || {};
+    order_items[productKey] = qty;
 
     state.temp_data.current_product_index++;
 
-    if (
-      state.temp_data.current_product_index <
-      state.temp_data.selected_products.length
-    ) {
-      const nextKey =
-        state.temp_data.selected_products[state.temp_data.current_product_index];
-
+    if (state.temp_data.current_product_index < state.temp_data.selected_products.length) {
+      const nextKey = state.temp_data.selected_products[state.temp_data.current_product_index];
       const nextProduct = PRODUCTS.find(p => p.key === nextKey);
 
-      await saveState(from, state);
+      await saveState(from, {
+        ...state,
+        order_items,
+        temp_data: state.temp_data
+      });
 
       twiml.message(
         state.language === 'es'
@@ -176,6 +170,7 @@ async function handleMessage(from, body, req) {
 
     await saveState(from, {
       ...state,
+      order_items,
       current_step: 'ORDER_COMPLETE'
     });
 
