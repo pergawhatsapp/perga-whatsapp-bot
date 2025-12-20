@@ -7,11 +7,10 @@ const MessagingResponse = twilio.twiml.MessagingResponse;
    PRODUCTS
 ========================= */
 const PRODUCTS = [
-  { id: 1, key: 'BEER', name_en: 'Perga Beer 5.2%', name_es: 'Perga Cerveza 5.2%', price: 25.4, alcoholic: true },
-  { id: 2, key: 'COLA', name_en: 'Perga Cola', name_es: 'Perga Cola', price: 21.6, alcoholic: false },
-  { id: 3, key: 'ORANGE', name_en: 'Perga Orange', name_es: 'Perga Naranja', price: 21.6, alcoholic: false },
-  { id: 4, key: 'LIME', name_en: 'Perga Limon-Lime', name_es: 'Perga Limón-Lima', price: 21.6, alcoholic: false },
-  { id: 5, key: 'MALTA', name_en: 'Malta Perga', name_es: 'Malta Perga', price: 21.6, alcoholic: false }
+  { id: 1, key: 'PERGA_COLA', name_en: 'Perga Cola', name_es: 'Perga Cola', price: 21.6 },
+  { id: 2, key: 'PERGA_ORANGE', name_en: 'Perga Orange', name_es: 'Perga Naranja', price: 21.6 },
+  { id: 3, key: 'PERGA_LIME', name_en: 'Perga Lime', name_es: 'Perga Limón-Lima', price: 21.6 },
+  { id: 4, key: 'MALTA', name_en: 'Malta Perga', name_es: 'Malta Perga', price: 21.6 }
 ];
 
 /* =========================
@@ -23,6 +22,7 @@ async function getState(whatsapp) {
     .select('*')
     .eq('whatsapp_number', whatsapp)
     .maybeSingle();
+
   return data;
 }
 
@@ -34,32 +34,24 @@ async function saveState(whatsapp, state) {
   });
 }
 
-function goBack(state) {
-  const history = state.temp_data.step_history || [];
-  history.pop();
-  return history.pop();
-}
-
 /* =========================
    MAIN HANDLER
 ========================= */
 async function handleMessage(from, body) {
   const twiml = new MessagingResponse();
-
-  // ✅ SAFETY FIX
-  const safeBody = typeof body === 'string' ? body : '';
-  const msg = safeBody.trim().toLowerCase();
+  const message = body.trim().toLowerCase();
 
   let state = await getState(from);
 
-  /* ===== START ===== */
-  if (!state && msg === 'order') {
+  /* ========= START ========= */
+  if (!state && message === 'order') {
     await saveState(from, {
       current_step: 'LANGUAGE',
       language: null,
-      temp_data: { step_history: [] },
+      temp_data: {},
       order_items: {}
     });
+
     twiml.message('English or Español?');
     return twiml.toString();
   }
@@ -69,181 +61,128 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
-  const lang = state.language || 'en';
-  const t = (en, es) => (lang === 'es' ? es : en);
-
-  /* ===== BACK ===== */
-  if (msg === 'back' || msg === 'atrás') {
-    const prev = goBack(state);
-    if (!prev) {
-      twiml.message(t('Cannot go back.', 'No se puede regresar.'));
-      return twiml.toString();
-    }
-    state.current_step = prev;
-    await saveState(from, state);
-    twiml.message(t('Going back.', 'Regresando.'));
-    return twiml.toString();
-  }
-
-  /* ===== LANGUAGE ===== */
+  /* ========= LANGUAGE ========= */
   if (state.current_step === 'LANGUAGE') {
-    state.language = msg.includes('es') ? 'es' : 'en';
-    state.current_step = 'ACCOUNT_TYPE';
-    state.temp_data.step_history.push('LANGUAGE');
-    await saveState(from, state);
-    twiml.message(t('New or existing account?', '¿Cuenta nueva o existente?'));
-    return twiml.toString();
-  }
+    const lang = message.includes('es') ? 'es' : 'en';
 
-  /* ===== ACCOUNT TYPE ===== */
-  if (state.current_step === 'ACCOUNT_TYPE') {
-    state.temp_data.step_history.push('ACCOUNT_TYPE');
-    state.current_step = msg.includes('existing') ? 'EXISTING_NAME' : 'NEW_BUSINESS';
-    await saveState(from, state);
-    twiml.message(t('Business name?', '¿Nombre del negocio?'));
-    return twiml.toString();
-  }
+    await saveState(from, {
+      ...state,
+      language: lang,
+      current_step: 'SELECT_PRODUCT'
+    });
 
-  /* ===== EXISTING ACCOUNT ===== */
-  if (state.current_step === 'EXISTING_NAME') {
-    const businessName = safeBody.trim();
-
-    const { data: business } = await supabase
-      .from('businesses')
-      .select('*')
-      .eq('business_name', businessName)
-      .eq('phone', from)
-      .maybeSingle();
-
-    if (!business) {
-      state.current_step = 'ACCOUNT_TYPE';
-      await saveState(from, state);
-      twiml.message(t(
-        'Business not found. Create new account?',
-        'Negocio no encontrado. ¿Crear cuenta nueva?'
-      ));
-      return twiml.toString();
-    }
-
-    state.temp_data = {
-      ...state.temp_data,
-      business_name: business.business_name,
-      email: business.email,
-      phone: business.phone,
-      address: business.address,
-      contact_name: business.contact_name,
-      tax_exempt: business.tax_id_type === 'resale',
-      alcohol_license: business.alcohol_license,
-      license_number: business.license_number
-    };
-
-    state.current_step = 'SELECT_PRODUCTS';
-    await saveState(from, state);
-    twiml.message(t('Account loaded. Let’s order.', 'Cuenta cargada. Vamos a ordenar.'));
-    return twiml.toString();
-  }
-
-  /* ===== NEW BUSINESS ===== */
-  if (state.current_step === 'NEW_BUSINESS') {
-    state.temp_data.business_name = safeBody.trim();
-    state.temp_data.tax_exempt = false;
-    state.temp_data.alcohol_license = false;
-    state.temp_data.step_history.push('NEW_BUSINESS');
-    state.current_step = 'SELECT_PRODUCTS';
-    await saveState(from, state);
-
-    twiml.message(t(
-      'Account created. Let’s select products.',
-      'Cuenta creada. Vamos a seleccionar productos.'
-    ));
-    return twiml.toString();
-  }
-
-  /* ===== PRODUCT LIST ===== */
-  if (state.current_step === 'SELECT_PRODUCTS') {
-    const allowed = state.temp_data.alcohol_license
-      ? PRODUCTS
-      : PRODUCTS.filter(p => !p.alcoholic);
-
-    state.temp_data.allowed = allowed;
-    state.temp_data.index = 0;
-    state.temp_data.step_history.push('SELECT_PRODUCTS');
-    state.current_step = 'ASK_QTY';
-
-    await saveState(from, state);
-    const p = allowed[0];
-
-    twiml.message(t(
-      `How many cases for ${p.name_en}? (min 10)`,
-      `¿Cuántas cajas para ${p.name_es}? (mín 10)`
-    ));
-    return twiml.toString();
-  }
-
-  /* ===== QUANTITY ===== */
-  if (state.current_step === 'ASK_QTY') {
-    const qty = parseInt(msg);
-    if (isNaN(qty) || qty < 10) {
-      twiml.message(t('Minimum is 10 cases.', 'El mínimo es 10 cajas.'));
-      return twiml.toString();
-    }
-
-    const product = state.temp_data.allowed[state.temp_data.index];
-    state.order_items[product.key] = qty;
-    state.temp_data.index++;
-
-    if (state.temp_data.index < state.temp_data.allowed.length) {
-      await saveState(from, state);
-      const next = state.temp_data.allowed[state.temp_data.index];
-      twiml.message(t(
-        `How many cases for ${next.name_en}?`,
-        `¿Cuántas cajas para ${next.name_es}?`
-      ));
-      return twiml.toString();
-    }
-
-    let subtotal = 0;
-    let summary = '';
-
-    for (const key in state.order_items) {
-      const p = PRODUCTS.find(x => x.key === key);
-      const line = state.order_items[key] * p.price;
-      subtotal += line;
-      summary += `${p.name_en}: ${state.order_items[key]} → $${line.toFixed(2)}\n`;
-    }
-
-    const tax = state.temp_data.tax_exempt ? 0 : subtotal * 0.07;
-    const total = subtotal + tax;
-
-    state.current_step = 'CONFIRM';
-    await saveState(from, state);
+    const productList = PRODUCTS.map(
+      p => `${p.id}. ${lang === 'es' ? p.name_es : p.name_en}`
+    ).join('\n');
 
     twiml.message(
-      `ORDER REVIEW\n\n${summary}\nSubtotal: $${subtotal.toFixed(2)}\nTax: $${tax.toFixed(2)}\nTOTAL: $${total.toFixed(2)}\n\nReply YES to confirm`
+      lang === 'es'
+        ? `Seleccione productos por número (ej: 1,3) o escriba ALL:\n${productList}`
+        : `Select products by number (ex: 1,3) or type ALL:\n${productList}`
     );
+
     return twiml.toString();
   }
 
-  /* ===== CONFIRM ===== */
-  if (state.current_step === 'CONFIRM') {
-    if (!msg.startsWith('y')) {
-      twiml.message('Order cancelled.');
+  /* ========= SELECT PRODUCT ========= */
+  if (state.current_step === 'SELECT_PRODUCT') {
+    let selected = [];
+
+    if (message === 'all') {
+      selected = PRODUCTS.map(p => p.key);
+    } else {
+      const nums = message
+        .split(/[\s,]+/)
+        .map(n => parseInt(n))
+        .filter(Boolean);
+
+      selected = PRODUCTS.filter(p => nums.includes(p.id)).map(p => p.key);
+    }
+
+    if (selected.length === 0) {
+      twiml.message(
+        state.language === 'es' ? 'Selección inválida.' : 'Invalid selection.'
+      );
       return twiml.toString();
     }
 
-    await supabase.from('conversation_state').delete().eq('whatsapp_number', from);
-    twiml.message(t(
-      'Invoice will be sent shortly. Thank you for choosing Perga!',
-      'La factura será enviada pronto. ¡Gracias por elegir Perga!'
-    ));
+    const temp_data = {
+      selected_products: selected,
+      current_product_index: 0
+    };
+
+    await saveState(from, {
+      ...state,
+      current_step: 'ASK_QUANTITY',
+      temp_data
+    });
+
+    const product = PRODUCTS.find(p => p.key === selected[0]);
+
+    twiml.message(
+      state.language === 'es'
+        ? `¿Cuántas cajas para ${product.name_es}? (mínimo 10)`
+        : `How many cases for ${product.name_en}? (minimum 10)`
+    );
+
     return twiml.toString();
   }
 
-  /* ===== FALLBACK ===== */
-  twiml.message(t(
-    'I didn’t understand that. Type "order" to start.',
-    'No entendí eso. Escriba "order" para comenzar.'
-  ));
+  /* ========= ASK QUANTITY ========= */
+  if (state.current_step === 'ASK_QUANTITY') {
+    const qty = parseInt(message);
+
+    if (isNaN(qty) || qty < 10) {
+      twiml.message(
+        state.language === 'es'
+          ? 'El mínimo es 10 cajas.'
+          : 'Minimum is 10 cases.'
+      );
+      return twiml.toString();
+    }
+
+    const index = state.temp_data.current_product_index;
+    const productKey = state.temp_data.selected_products[index];
+
+    const order_items = state.order_items || {};
+    order_items[productKey] = qty;
+
+    state.temp_data.current_product_index++;
+
+    if (state.temp_data.current_product_index < state.temp_data.selected_products.length) {
+      const nextKey = state.temp_data.selected_products[state.temp_data.current_product_index];
+      const nextProduct = PRODUCTS.find(p => p.key === nextKey);
+
+      await saveState(from, {
+        ...state,
+        order_items,
+        temp_data: state.temp_data
+      });
+
+      twiml.message(
+        state.language === 'es'
+          ? `¿Cuántas cajas para ${nextProduct.name_es}? (mínimo 10)`
+          : `How many cases for ${nextProduct.name_en}? (minimum 10)`
+      );
+
+      return twiml.toString();
+    }
+
+    await saveState(from, {
+      ...state,
+      order_items,
+      current_step: 'ORDER_COMPLETE'
+    });
+
+    twiml.message(
+      state.language === 'es'
+        ? 'Pedido completado. Un representante lo contactará.'
+        : 'Order completed. A sales rep will contact you.'
+    );
+
+    return twiml.toString();
+  }
+
   return twiml.toString();
 }
 
