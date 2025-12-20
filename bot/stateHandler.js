@@ -218,24 +218,46 @@ async function handleMessage(from, body) {
      CONFIRM
   ========================= */
   if (state.current_step === 'CONFIRM') {
-    if (!msg.startsWith('y')) {
-      twiml.message('Order cancelled.');
-      return twiml.toString();
-    }
-
-    await supabase.from('conversation_state').delete().eq('whatsapp_number', from);
-
-    twiml.message(
-      t(
-        'Invoice sent ✓ A sales rep will contact you. Thank you for choosing Perga!',
-        'Factura enviada ✓ Un representante lo contactará. ¡Gracias por elegir Perga!'
-      )
-    );
-
+  if (!msg.startsWith('y')) {
+    twiml.message('Order cancelled.');
     return twiml.toString();
   }
 
-  twiml.message('Unexpected input.');
+  const { generateInvoice } = require('../services/invoice');
+  const { sendInvoiceEmail } = require('../services/email');
+
+  const items = Object.keys(state.order_items).map(key => {
+    const p = PRODUCTS.find(x => x.key === key);
+    return {
+      name: p.name_en,
+      qty: state.order_items[key],
+      price: p.price
+    };
+  });
+
+  const pdf = await generateInvoice({
+    business_name: state.temp_data.business_name,
+    contact_name: state.temp_data.contact_name || 'N/A',
+    email: state.temp_data.email,
+    phone: state.temp_data.phone || '',
+    address: state.temp_data.address || '',
+    alcohol_license: state.temp_data.alcohol_license,
+    license_number: state.temp_data.license_number,
+    tax_exempt: state.temp_data.tax_exempt,
+    items
+  });
+
+  await sendInvoiceEmail(state.temp_data.email, pdf);
+  await sendInvoiceEmail(process.env.COMPANY_EMAIL, pdf);
+
+  await supabase.from('conversation_state').delete().eq('whatsapp_number', from);
+
+  twiml.message(
+    state.language === 'es'
+      ? 'Factura enviada ✓ Un representante se comunicará con usted. ¡Gracias por elegir Perga!'
+      : 'Invoice sent ✓ A sales representative will contact you. Thank you for choosing Perga!'
+  );
+
   return twiml.toString();
 }
 
