@@ -1,16 +1,16 @@
 const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-async function sendInvoiceEmail(customerEmail, pdfBuffer, orderNumber) {
+async function sendInvoiceEmail(to, pdfBuffer) {
   const msg = {
-    to: [customerEmail, process.env.COMPANY_EMAIL],
+    to,
     from: process.env.COMPANY_EMAIL,
-    subject: `Invoice ${orderNumber}`,
-    text: 'Your invoice is attached.',
+    subject: 'Perga Sales Order Invoice',
+    text: 'Please find your invoice attached.',
     attachments: [
       {
         content: pdfBuffer.toString('base64'),
-        filename: `${orderNumber}.pdf`,
+        filename: 'invoice.pdf',
         type: 'application/pdf',
         disposition: 'attachment'
       }
