@@ -237,23 +237,81 @@ async function handleMessage(from, body) {
 
   /* ========= CONFIRM ========= */
   if (state.current_step === 'CONFIRM') {
-    if (!msg.startsWith('y')) {
-      twiml.message(t('Order cancelled.', 'Pedido cancelado.'));
-      return twiml.toString();
-    }
-
-    await supabase.from('conversation_state').delete().eq('whatsapp_number', from);
-
-    twiml.message(
-      t(
-        'Invoice sent ✓ A sales rep will contact you. Thank you for choosing Perga!',
-        'Factura enviada ✓ Un representante se comunicará con usted. ¡Gracias por elegir Perga!'
-      )
-    );
+  if (!msg.startsWith('y')) {
+    twiml.message('Order cancelled.');
     return twiml.toString();
   }
 
-  return twiml.toString();
+  const { generateInvoice } = require('../services/invoice');
+  const { uploadInvoice } = require('../services/storage');
+  const { sendInvoiceEmail } = require('../services/email');
+
+  /* =========================
+     BUILD ITEMS
+  ========================= */
+  const items = Object.keys(state.order_items).map(key => {
+    const p = PRODUCTS.find(x => x.key === key);
+    return {
+      name: p.name_en,
+      qty: state.order_items[key],
+      price: p.price
+    };
+  });
+
+  /* =========================
+     GENERATE PDF
+  ========================= */
+  const pdf = await generateInvoice({
+    business_name: state.temp_data.business_name,
+    contact_name: state.temp_data.contact_name,
+    email: state.temp_data.email,
+    phone: state.temp_data.phone,
+    address: state.temp_data.address,
+    alcohol_license: state.temp_data.alcohol_license,
+    license_number: state.temp_data.license_number,
+    tax_exempt: state.temp_data.tax_exempt,
+    items
+  });
+
+  /* =========================
+     UPLOAD TO SUPABASE
+  ========================= */
+  const invoiceUrl = await uploadInvoice(pdf);
+
+  /* =========================
+     SAVE INVOICE RECORD
+  ========================= */
+  await supabase.from('invoices').insert({
+    business_name: state.temp_data.business_name,
+    whatsapp: from,
+    invoice_url: invoiceUrl,
+    total: items.reduce((t, i) => t + i.qty * i.price, 0)
+  });
+
+  /* =========================
+     SEND WHATSAPP PDF
+  ========================= */
+  const mediaMsg = new MessagingResponse();
+  mediaMsg.message({
+    body: '📄 Your invoice is ready',
+    mediaUrl: invoiceUrl
+  });
+
+  /* =========================
+     SEND EMAIL COPY
+  ========================= */
+  if (state.temp_data.email) {
+    await sendInvoiceEmail(state.temp_data.email, pdf);
+  }
+
+  /* =========================
+     CLEAR STATE
+  ========================= */
+  await supabase
+    .from('conversation_state')
+    .delete()
+    .eq('whatsapp_number', from);
+
+  return mediaMsg.toString();
 }
 
-module.exports = { handleMessage };
