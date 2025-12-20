@@ -43,6 +43,13 @@ async function handleMessage(from, body, req) {
 
   let state = await getState(from);
 
+   // 🔥 TEMP DEBUG: force reply to confirm Twilio → bot works
+  if (body.trim().toLowerCase() === 'order') {
+    const test = new MessagingResponse();
+    test.message('DEBUG OK — bot is responding');
+    return test.toString();
+  }
+
   /* ========= START ========= */
   if (!state && message === 'order') {
     await saveState(from, {
