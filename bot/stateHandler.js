@@ -129,6 +129,55 @@ async function handleMessage(from, body) {
   return twiml.toString();
 }
 
+   /* =========================
+   EXISTING ACCOUNT LOOKUP
+========================= */
+if (state.current_step === 'EXISTING_NAME') {
+  const businessName = body.trim();
+
+  const { data: business } = await supabase
+    .from('businesses')
+    .select('*')
+    .eq('business_name', businessName)
+    .eq('phone', from)
+    .maybeSingle();
+
+  if (!business) {
+    state.current_step = 'ACCOUNT_TYPE';
+    await saveState(from, state);
+
+    twiml.message(
+      state.language === 'es'
+        ? 'Negocio no encontrado. ¿Desea crear una cuenta nueva?'
+        : 'Business not found. Would you like to create a new account?'
+    );
+    return twiml.toString();
+  }
+
+  // ✅ BUSINESS FOUND — LOAD INTO STATE
+  state.temp_data.business_id = business.id;
+  state.temp_data.business_name = business.business_name;
+  state.temp_data.email = business.email;
+  state.temp_data.tax_exempt = business.tax_id_type === 'resale';
+  state.temp_data.alcohol_license = business.alcohol_license;
+  state.temp_data.license_number = business.license_number;
+  state.temp_data.address = business.address;
+  state.temp_data.contact_name = business.contact_name;
+  state.temp_data.phone = business.phone;
+
+  state.current_step = 'SELECT_PRODUCTS';
+
+  await saveState(from, state);
+
+  twiml.message(
+    state.language === 'es'
+      ? 'Cuenta cargada. Vamos a crear su pedido.'
+      : 'Account loaded. Let’s create your order.'
+  );
+
+  return twiml.toString();
+}
+
   /* =========================
      NEW BUSINESS FLOW (SHORTENED)
   ========================= */
