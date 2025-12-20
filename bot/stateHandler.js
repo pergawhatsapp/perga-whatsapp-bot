@@ -106,20 +106,28 @@ async function handleMessage(from, body) {
      ACCOUNT TYPE
   ========================= */
   if (state.current_step === 'ACCOUNT_TYPE') {
-    state.temp_data.step_history.push('ACCOUNT_TYPE');
+  state.temp_data.step_history.push('ACCOUNT_TYPE');
 
-    if (msg.includes('existing')) {
-      state.current_step = 'EXISTING_NAME';
-      await saveState(from, state);
-      twiml.message(t('Business name?', '¿Nombre del negocio?'));
-      return twiml.toString();
-    }
-
-    state.current_step = 'NEW_BUSINESS';
+  if (msg.includes('existing')) {
+    state.current_step = 'EXISTING_NAME';
     await saveState(from, state);
-    twiml.message(t('Business name?', '¿Nombre del negocio?'));
+    twiml.message(
+      state.language === 'es'
+        ? '¿Nombre del negocio?'
+        : 'Business name?'
+    );
     return twiml.toString();
   }
+
+  state.current_step = 'NEW_BUSINESS';
+  await saveState(from, state);
+  twiml.message(
+    state.language === 'es'
+      ? '¿Nombre del negocio?'
+      : 'Business name?'
+  );
+  return twiml.toString();
+}
 
   /* =========================
      NEW BUSINESS FLOW (SHORTENED)
