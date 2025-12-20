@@ -4,17 +4,18 @@ const supabase = require('../services/supabase');
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
 /* =========================
-   PRODUCTS
+   PRODUCTS (STATIC FOR NOW)
 ========================= */
 const PRODUCTS = [
-  { id: 1, key: 'PERGA_COLA', name_en: 'Perga Cola', name_es: 'Perga Cola', price: 21.6 },
-  { id: 2, key: 'PERGA_ORANGE', name_en: 'Perga Orange', name_es: 'Perga Naranja', price: 21.6 },
-  { id: 3, key: 'PERGA_LIME', name_en: 'Perga Lime', name_es: 'Perga Limón-Lima', price: 21.6 },
-  { id: 4, key: 'MALTA', name_en: 'Malta Perga', name_es: 'Malta Perga', price: 21.6 }
+  { id: 1, key: 'BEER', name_en: 'Perga Beer 5.2%', name_es: 'Perga Cerveza 5.2%', price: 25.4, alcoholic: true },
+  { id: 2, key: 'COLA', name_en: 'Perga Cola', name_es: 'Perga Cola', price: 21.6, alcoholic: false },
+  { id: 3, key: 'ORANGE', name_en: 'Perga Orange', name_es: 'Perga Naranja', price: 21.6, alcoholic: false },
+  { id: 4, key: 'LIME', name_en: 'Perga Limon-Lime', name_es: 'Perga Limón-Lima', price: 21.6, alcoholic: false },
+  { id: 5, key: 'MALTA', name_en: 'Malta Perga', name_es: 'Malta Perga', price: 21.6, alcoholic: false }
 ];
 
 /* =========================
-   DB HELPERS
+   DATABASE HELPERS
 ========================= */
 async function getState(whatsapp) {
   const { data } = await supabase
@@ -34,21 +35,29 @@ async function saveState(whatsapp, state) {
   });
 }
 
+function previousStep(state) {
+  const history = state.temp_data.step_history || [];
+  history.pop(); // remove current
+  return history.pop(); // go back
+}
+
 /* =========================
-   MAIN HANDLER
+   MAIN BOT HANDLER
 ========================= */
 async function handleMessage(from, body) {
   const twiml = new MessagingResponse();
-  const message = body.trim().toLowerCase();
+  const msg = body.trim().toLowerCase();
 
   let state = await getState(from);
 
-  /* ========= START ========= */
-  if (!state && message === 'order') {
+  /* =========================
+     START
+  ========================= */
+  if (!state && msg === 'order') {
     await saveState(from, {
       current_step: 'LANGUAGE',
       language: null,
-      temp_data: {},
+      temp_data: { step_history: [] },
       order_items: {}
     });
 
@@ -61,128 +70,172 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
-  /* ========= LANGUAGE ========= */
+  /* =========================
+     BACK COMMAND
+  ========================= */
+  if (msg === 'back' || msg === 'atrás') {
+    const step = previousStep(state);
+    if (!step) {
+      twiml.message('Cannot go back.');
+      return twiml.toString();
+    }
+
+    state.current_step = step;
+    await saveState(from, state);
+    twiml.message('Okay, going back.');
+    return twiml.toString();
+  }
+
+  const lang = state.language || 'en';
+  const t = (en, es) => (lang === 'es' ? es : en);
+
+  /* =========================
+     LANGUAGE
+  ========================= */
   if (state.current_step === 'LANGUAGE') {
-    const lang = message.includes('es') ? 'es' : 'en';
+    state.language = msg.includes('es') ? 'es' : 'en';
+    state.current_step = 'ACCOUNT_TYPE';
+    state.temp_data.step_history.push('LANGUAGE');
 
-    await saveState(from, {
-      ...state,
-      language: lang,
-      current_step: 'SELECT_PRODUCT'
-    });
-
-    const productList = PRODUCTS.map(
-      p => `${p.id}. ${lang === 'es' ? p.name_es : p.name_en}`
-    ).join('\n');
-
-    twiml.message(
-      lang === 'es'
-        ? `Seleccione productos por número (ej: 1,3) o escriba ALL:\n${productList}`
-        : `Select products by number (ex: 1,3) or type ALL:\n${productList}`
-    );
-
+    await saveState(from, state);
+    twiml.message(t('New or existing account?', '¿Cuenta nueva o existente?'));
     return twiml.toString();
   }
 
-  /* ========= SELECT PRODUCT ========= */
-  if (state.current_step === 'SELECT_PRODUCT') {
-    let selected = [];
+  /* =========================
+     ACCOUNT TYPE
+  ========================= */
+  if (state.current_step === 'ACCOUNT_TYPE') {
+    state.temp_data.step_history.push('ACCOUNT_TYPE');
 
-    if (message === 'all') {
-      selected = PRODUCTS.map(p => p.key);
-    } else {
-      const nums = message
-        .split(/[\s,]+/)
-        .map(n => parseInt(n))
-        .filter(Boolean);
-
-      selected = PRODUCTS.filter(p => nums.includes(p.id)).map(p => p.key);
-    }
-
-    if (selected.length === 0) {
-      twiml.message(
-        state.language === 'es' ? 'Selección inválida.' : 'Invalid selection.'
-      );
+    if (msg.includes('existing')) {
+      state.current_step = 'EXISTING_NAME';
+      await saveState(from, state);
+      twiml.message(t('Business name?', '¿Nombre del negocio?'));
       return twiml.toString();
     }
 
-    const temp_data = {
-      selected_products: selected,
-      current_product_index: 0
-    };
-
-    await saveState(from, {
-      ...state,
-      current_step: 'ASK_QUANTITY',
-      temp_data
-    });
-
-    const product = PRODUCTS.find(p => p.key === selected[0]);
-
-    twiml.message(
-      state.language === 'es'
-        ? `¿Cuántas cajas para ${product.name_es}? (mínimo 10)`
-        : `How many cases for ${product.name_en}? (minimum 10)`
-    );
-
+    state.current_step = 'NEW_BUSINESS';
+    await saveState(from, state);
+    twiml.message(t('Business name?', '¿Nombre del negocio?'));
     return twiml.toString();
   }
 
-  /* ========= ASK QUANTITY ========= */
-  if (state.current_step === 'ASK_QUANTITY') {
-    const qty = parseInt(message);
+  /* =========================
+     NEW BUSINESS FLOW (SHORTENED)
+  ========================= */
+  if (state.current_step === 'NEW_BUSINESS') {
+    state.temp_data.business_name = body;
+    state.current_step = 'TAX_ID';
+    state.temp_data.step_history.push('NEW_BUSINESS');
 
+    await saveState(from, state);
+    twiml.message(t('Do you have a resale tax ID? (yes/no)', '¿Tiene ID de reventa? (sí/no)'));
+    return twiml.toString();
+  }
+
+  if (state.current_step === 'TAX_ID') {
+    state.temp_data.tax_exempt = msg.startsWith('y') || msg.startsWith('s');
+    state.current_step = 'SELECT_PRODUCTS';
+    state.temp_data.step_history.push('TAX_ID');
+
+    await saveState(from, state);
+  }
+
+  /* =========================
+     PRODUCT SELECTION
+  ========================= */
+  if (state.current_step === 'SELECT_PRODUCTS') {
+    const allowed = state.temp_data.tax_exempt
+      ? PRODUCTS
+      : PRODUCTS.filter(p => !p.alcoholic);
+
+    const list = allowed.map(p => `${p.id}. ${t(p.name_en, p.name_es)}`).join('\n');
+
+    state.current_step = 'ASK_QTY';
+    state.temp_data.allowed = allowed;
+    state.temp_data.index = 0;
+    state.temp_data.step_history.push('SELECT_PRODUCTS');
+
+    await saveState(from, state);
+    twiml.message(t(
+      `Select products by number:\n${list}`,
+      `Seleccione productos por número:\n${list}`
+    ));
+    return twiml.toString();
+  }
+
+  /* =========================
+     QUANTITY PER PRODUCT
+  ========================= */
+  if (state.current_step === 'ASK_QTY') {
+    const qty = parseInt(msg);
     if (isNaN(qty) || qty < 10) {
-      twiml.message(
-        state.language === 'es'
-          ? 'El mínimo es 10 cajas.'
-          : 'Minimum is 10 cases.'
-      );
+      twiml.message(t('Minimum 10 cases.', 'Mínimo 10 cajas.'));
       return twiml.toString();
     }
 
-    const index = state.temp_data.current_product_index;
-    const productKey = state.temp_data.selected_products[index];
+    const product = state.temp_data.allowed[state.temp_data.index];
+    state.order_items[product.key] = qty;
+    state.temp_data.index++;
 
-    const order_items = state.order_items || {};
-    order_items[productKey] = qty;
-
-    state.temp_data.current_product_index++;
-
-    if (state.temp_data.current_product_index < state.temp_data.selected_products.length) {
-      const nextKey = state.temp_data.selected_products[state.temp_data.current_product_index];
-      const nextProduct = PRODUCTS.find(p => p.key === nextKey);
-
-      await saveState(from, {
-        ...state,
-        order_items,
-        temp_data: state.temp_data
-      });
-
-      twiml.message(
-        state.language === 'es'
-          ? `¿Cuántas cajas para ${nextProduct.name_es}? (mínimo 10)`
-          : `How many cases for ${nextProduct.name_en}? (minimum 10)`
-      );
-
+    if (state.temp_data.index < state.temp_data.allowed.length) {
+      await saveState(from, state);
+      const next = state.temp_data.allowed[state.temp_data.index];
+      twiml.message(t(
+        `How many cases for ${next.name_en}?`,
+        `¿Cuántas cajas para ${next.name_es}?`
+      ));
       return twiml.toString();
     }
 
-    await saveState(from, {
-      ...state,
-      order_items,
-      current_step: 'ORDER_COMPLETE'
-    });
+    /* =========================
+       REVIEW
+    ========================= */
+    let subtotal = 0;
+    let summary = '';
+
+    for (const key in state.order_items) {
+      const p = PRODUCTS.find(x => x.key === key);
+      const line = state.order_items[key] * p.price;
+      subtotal += line;
+      summary += `${p.name_en}: ${state.order_items[key]} → $${line.toFixed(2)}\n`;
+    }
+
+    const tax = state.temp_data.tax_exempt ? 0 : subtotal * 0.07;
+    const total = subtotal + tax;
+
+    await saveState(from, { ...state, current_step: 'CONFIRM' });
 
     twiml.message(
-      state.language === 'es'
-        ? 'Pedido completado. Un representante lo contactará.'
-        : 'Order completed. A sales rep will contact you.'
+      `ORDER REVIEW\n\n${summary}\nSubtotal: $${subtotal.toFixed(2)}\nTax: $${tax.toFixed(2)}\nTOTAL: $${total.toFixed(2)}\n\nReply YES to confirm`
     );
 
     return twiml.toString();
   }
 
+  /* =========================
+     CONFIRM
+  ========================= */
+  if (state.current_step === 'CONFIRM') {
+    if (!msg.startsWith('y')) {
+      twiml.message('Order cancelled.');
+      return twiml.toString();
+    }
+
+    await supabase.from('conversation_state').delete().eq('whatsapp_number', from);
+
+    twiml.message(
+      t(
+        'Invoice sent ✓ A sales rep will contact you. Thank you for choosing Perga!',
+        'Factura enviada ✓ Un representante lo contactará. ¡Gracias por elegir Perga!'
+      )
+    );
+
+    return twiml.toString();
+  }
+
+  twiml.message('Unexpected input.');
   return twiml.toString();
 }
 
