@@ -45,7 +45,11 @@ function goBack(state) {
 ========================= */
 async function handleMessage(from, body) {
   const twiml = new MessagingResponse();
-  const msg = body.trim().toLowerCase();
+
+  // ✅ SAFETY FIX
+  const safeBody = typeof body === 'string' ? body : '';
+  const msg = safeBody.trim().toLowerCase();
+
   let state = await getState(from);
 
   /* ===== START ===== */
@@ -94,11 +98,7 @@ async function handleMessage(from, body) {
   /* ===== ACCOUNT TYPE ===== */
   if (state.current_step === 'ACCOUNT_TYPE') {
     state.temp_data.step_history.push('ACCOUNT_TYPE');
-
-    state.current_step = msg.includes('existing')
-      ? 'EXISTING_NAME'
-      : 'NEW_BUSINESS';
-
+    state.current_step = msg.includes('existing') ? 'EXISTING_NAME' : 'NEW_BUSINESS';
     await saveState(from, state);
     twiml.message(t('Business name?', '¿Nombre del negocio?'));
     return twiml.toString();
@@ -106,7 +106,7 @@ async function handleMessage(from, body) {
 
   /* ===== EXISTING ACCOUNT ===== */
   if (state.current_step === 'EXISTING_NAME') {
-    const businessName = body.trim();
+    const businessName = safeBody.trim();
 
     const { data: business } = await supabase
       .from('businesses')
@@ -145,13 +145,13 @@ async function handleMessage(from, body) {
 
   /* ===== NEW BUSINESS ===== */
   if (state.current_step === 'NEW_BUSINESS') {
-    state.temp_data.business_name = body;
+    state.temp_data.business_name = safeBody.trim();
     state.temp_data.tax_exempt = false;
     state.temp_data.alcohol_license = false;
     state.temp_data.step_history.push('NEW_BUSINESS');
     state.current_step = 'SELECT_PRODUCTS';
-
     await saveState(from, state);
+
     twiml.message(t(
       'Account created. Let’s select products.',
       'Cuenta creada. Vamos a seleccionar productos.'
@@ -202,7 +202,6 @@ async function handleMessage(from, body) {
       return twiml.toString();
     }
 
-    /* ===== REVIEW ===== */
     let subtotal = 0;
     let summary = '';
 
@@ -240,10 +239,10 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
-  /* ===== SAFETY FALLBACK ===== */
+  /* ===== FALLBACK ===== */
   twiml.message(t(
-    'I didn’t understand that. Type "back" to go back.',
-    'No entendí eso. Escriba "back" para regresar.'
+    'I didn’t understand that. Type "order" to start.',
+    'No entendí eso. Escriba "order" para comenzar.'
   ));
   return twiml.toString();
 }
