@@ -33,8 +33,9 @@ async function saveState(whatsapp, state) {
   });
 }
 
-async function clearState(whatsapp) {
-  await supabase.from('conversation_state')
+async function resetState(whatsapp) {
+  await supabase
+    .from('conversation_state')
     .delete()
     .eq('whatsapp_number', whatsapp);
 }
@@ -42,16 +43,14 @@ async function clearState(whatsapp) {
 /* =========================
    MAIN HANDLER
 ========================= */
-async function handleMessage(from, body) {
+async function handleMessage(from, body = '') {
   const twiml = new MessagingResponse();
+  const msg = body.trim().toLowerCase();
 
-  // 🔒 HARD GUARD — prevents your crash
-  const msg = (body || '').trim().toLowerCase();
+  /* ===== HARD RESTART (ABSOLUTE PRIORITY) ===== */
+  if (msg === 'order') {
+    await resetState(from);
 
-  let state = await getState(from);
-
-  /* ================= START ================= */
-  if (!state && msg === 'order') {
     await saveState(from, {
       current_step: 'LANGUAGE',
       language: null,
@@ -63,6 +62,9 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
+  /* ===== LOAD STATE AFTER ORDER CHECK ===== */
+  const state = await getState(from);
+
   if (!state) {
     twiml.message('Send "Order" to start.');
     return twiml.toString();
@@ -71,44 +73,33 @@ async function handleMessage(from, body) {
   const lang = state.language || 'en';
   const t = (en, es) => (lang === 'es' ? es : en);
 
-  /* ================= LANGUAGE ================= */
+  /* ===== LANGUAGE ===== */
   if (state.current_step === 'LANGUAGE') {
-    const language = msg.includes('es') ? 'es' : 'en';
+    state.language = msg.includes('es') ? 'es' : 'en';
+    state.current_step = 'SELECT_PRODUCTS';
 
-    await saveState(from, {
-      ...state,
-      language,
-      current_step: 'SELECT_PRODUCTS'
-    });
+    await saveState(from, state);
 
     const list = PRODUCTS
-      .map(p => `${p.id}. ${language === 'es' ? p.name_es : p.name_en}`)
+      .map(p => `${p.id}. ${t(p.name_en, p.name_es)}`)
       .join('\n');
 
-    twiml.message(
-      t(
-        `Select products (example: 1,3) or type ALL:\n${list}`,
-        `Seleccione productos (ej: 1,3) o escriba ALL:\n${list}`
-      )
-    );
+    twiml.message(t(
+      `Select products by number (ex: 1,3) or type ALL:\n${list}`,
+      `Seleccione productos por número (ej: 1,3) o escriba ALL:\n${list}`
+    ));
     return twiml.toString();
   }
 
-  /* ================= SELECT PRODUCTS ================= */
+  /* ===== SELECT PRODUCTS ===== */
   if (state.current_step === 'SELECT_PRODUCTS') {
     let selected = [];
 
     if (msg === 'all') {
       selected = PRODUCTS.map(p => p.key);
     } else {
-      const nums = msg
-        .split(/[\s,]+/)
-        .map(n => parseInt(n))
-        .filter(Boolean);
-
-      selected = PRODUCTS
-        .filter(p => nums.includes(p.id))
-        .map(p => p.key);
+      const nums = msg.split(/[\s,]+/).map(n => parseInt(n)).filter(Boolean);
+      selected = PRODUCTS.filter(p => nums.includes(p.id)).map(p => p.key);
     }
 
     if (!selected.length) {
@@ -116,114 +107,57 @@ async function handleMessage(from, body) {
       return twiml.toString();
     }
 
-    await saveState(from, {
-      ...state,
-      current_step: 'ASK_QTY',
-      temp_data: {
-        selected_products: selected,
-        index: 0
-      }
-    });
+    state.temp_data = { selected, index: 0 };
+    state.order_items = {};
+    state.current_step = 'ASK_QTY';
 
-    const p = PRODUCTS.find(x => x.key === selected[0]);
+    await saveState(from, state);
 
-    twiml.message(
-      t(
-        `How many cases for ${p.name_en}? (minimum 10)`,
-        `¿Cuántas cajas para ${p.name_es}? (mínimo 10)`
-      )
-    );
+    const first = PRODUCTS.find(p => p.key === selected[0]);
+
+    twiml.message(t(
+      `How many cases for ${first.name_en}? (min 10)`,
+      `¿Cuántas cajas para ${first.name_es}? (mín 10)`
+    ));
     return twiml.toString();
   }
 
-  /* ================= ASK QUANTITY ================= */
+  /* ===== ASK QTY ===== */
   if (state.current_step === 'ASK_QTY') {
     const qty = parseInt(msg);
-
     if (isNaN(qty) || qty < 10) {
       twiml.message(t('Minimum is 10 cases.', 'El mínimo es 10 cajas.'));
       return twiml.toString();
     }
 
-    const index = state.temp_data.index;
-    const productKey = state.temp_data.selected_products[index];
-
-    const order_items = state.order_items || {};
-    order_items[productKey] = qty;
-
+    const key = state.temp_data.selected[state.temp_data.index];
+    state.order_items[key] = qty;
     state.temp_data.index++;
 
-    if (state.temp_data.index < state.temp_data.selected_products.length) {
-      const nextKey = state.temp_data.selected_products[state.temp_data.index];
+    if (state.temp_data.index < state.temp_data.selected.length) {
+      const nextKey = state.temp_data.selected[state.temp_data.index];
       const next = PRODUCTS.find(p => p.key === nextKey);
 
-      await saveState(from, {
-        ...state,
-        order_items,
-        temp_data: state.temp_data
-      });
-
-      twiml.message(
-        t(
-          `How many cases for ${next.name_en}? (minimum 10)`,
-          `¿Cuántas cajas para ${next.name_es}? (mínimo 10)`
-        )
-      );
+      await saveState(from, state);
+      twiml.message(t(
+        `How many cases for ${next.name_en}?`,
+        `¿Cuántas cajas para ${next.name_es}?`
+      ));
       return twiml.toString();
     }
 
-    /* ================= REVIEW ================= */
-    let subtotal = 0;
-    let summary = '';
+    state.current_step = 'DONE';
+    await saveState(from, state);
 
-    for (const key in order_items) {
-      const p = PRODUCTS.find(x => x.key === key);
-      const line = p.price * order_items[key];
-      subtotal += line;
-      summary += `${p.name_en}: ${order_items[key]} → $${line.toFixed(2)}\n`;
-    }
-
-    const tax = subtotal * 0.07;
-    const total = subtotal + tax;
-
-    await saveState(from, {
-      ...state,
-      order_items,
-      current_step: 'CONFIRM'
-    });
-
-    twiml.message(
-      `ORDER REVIEW\n\n${summary}\nSubtotal: $${subtotal.toFixed(
-        2
-      )}\nTax: $${tax.toFixed(2)}\nTOTAL: $${total.toFixed(
-        2
-      )}\n\nReply YES to confirm`
-    );
+    twiml.message(t(
+      'Order received. Invoice will be sent shortly.',
+      'Pedido recibido. La factura será enviada pronto.'
+    ));
     return twiml.toString();
   }
 
-  /* ================= CONFIRM ================= */
-  if (state.current_step === 'CONFIRM') {
-    if (!msg.startsWith('y')) {
-      await clearState(from);
-      twiml.message('Order cancelled.');
-      return twiml.toString();
-    }
-
-    // 🔜 PDF + Supabase invoice insert goes here next
-    await clearState(from);
-
-    twiml.message(
-      t(
-        'Invoice will be sent shortly. Thank you for choosing Perga!',
-        'La factura será enviada pronto. ¡Gracias por elegir Perga!'
-      )
-    );
-    return twiml.toString();
-  }
-
-  /* ================= FALLBACK ================= */
-  twiml.message(t('Send "Order" to start.', 'Envíe "Order" para comenzar.'));
+  /* ===== FALLBACK ===== */
+  twiml.message('Send "Order" to start.');
   return twiml.toString();
 }
 
