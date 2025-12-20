@@ -6,6 +6,7 @@ const app = express();
 app.use(express.urlencoded({ extended: false }));
 
 app.post('/webhook', async (req, res) => {
+  console.log('INCOMING:', req.body);
   const incomingMsg = req.body.Body?.trim().toLowerCase();
   const from = req.body.From;
 
