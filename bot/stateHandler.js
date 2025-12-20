@@ -17,9 +17,7 @@ const PRODUCTS = [
 /* =========================
    HELPERS
 ========================= */
-function normalizeWhatsApp(from) {
-  return from.replace('whatsapp:', '');
-}
+const normalizeWhatsApp = from => from.replace('whatsapp:', '');
 
 async function getState(whatsapp) {
   const { data } = await supabase
@@ -30,10 +28,10 @@ async function getState(whatsapp) {
   return data;
 }
 
-async function saveState(whatsapp, state) {
+async function saveState(whatsapp, patch) {
   await supabase.from('conversation_state').upsert({
     whatsapp_number: whatsapp,
-    ...state,
+    ...patch,
     updated_at: new Date()
   });
 }
@@ -54,7 +52,8 @@ async function handleMessage(from, body) {
       current_step: 'LANGUAGE',
       language: null,
       account: {},
-      order: { items: [] }
+      order: { items: [] },
+      temp: {}
     });
 
     twiml.message('English or Español?');
@@ -73,9 +72,11 @@ async function handleMessage(from, body) {
     const language = msg.includes('es') ? 'es' : 'en';
 
     await saveState(whatsapp, {
-      ...state,
+      current_step: 'ACCOUNT_TYPE',
       language,
-      current_step: 'ACCOUNT_TYPE'
+      account: state.account,
+      order: state.order,
+      temp: {}
     });
 
     twiml.message(
@@ -91,13 +92,14 @@ async function handleMessage(from, body) {
     const isExisting = msg.includes('exist');
 
     await saveState(whatsapp, {
-      ...state,
-      current_step: isExisting ? 'EXISTING_NAME' : 'NEW_BUSINESS_NAME'
+      current_step: isExisting ? 'EXISTING_NAME' : 'NEW_BUSINESS_NAME',
+      language: state.language,
+      account: state.account,
+      order: state.order,
+      temp: {}
     });
 
-    twiml.message(
-      t('Business name?', '¿Nombre del negocio?')
-    );
+    twiml.message(t('Business name?', '¿Nombre del negocio?'));
     return twiml.toString();
   }
 
@@ -114,8 +116,11 @@ async function handleMessage(from, body) {
 
     if (!business) {
       await saveState(whatsapp, {
-        ...state,
-        current_step: 'ACCOUNT_TYPE'
+        current_step: 'ACCOUNT_TYPE',
+        language: state.language,
+        account: {},
+        order: state.order,
+        temp: {}
       });
 
       twiml.message(
@@ -128,9 +133,11 @@ async function handleMessage(from, body) {
     }
 
     await saveState(whatsapp, {
-      ...state,
+      current_step: 'SELECT_PRODUCTS',
+      language: state.language,
       account: business,
-      current_step: 'SELECT_PRODUCTS'
+      order: { items: [] },
+      temp: {}
     });
 
     twiml.message(
@@ -139,12 +146,14 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
-  /* ===== NEW ACCOUNT (MINIMAL FOR NOW) ===== */
+  /* ===== NEW ACCOUNT (TEMP) ===== */
   if (state.current_step === 'NEW_BUSINESS_NAME') {
     await saveState(whatsapp, {
-      ...state,
-      account: { business_name: body.trim() },
-      current_step: 'SELECT_PRODUCTS'
+      current_step: 'SELECT_PRODUCTS',
+      language: state.language,
+      account: { business_name: body.trim(), alcohol_license: false },
+      order: { items: [] },
+      temp: {}
     });
 
     twiml.message(
@@ -153,26 +162,25 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
-  /* ===== PRODUCT SELECTION ===== */
+  /* ===== PRODUCT FLOW ===== */
   if (state.current_step === 'SELECT_PRODUCTS') {
     const allowed = state.account.alcohol_license
       ? PRODUCTS
       : PRODUCTS.filter(p => !p.alcoholic);
 
-    let list = allowed.map(
-      p => `• ${state.language === 'es' ? p.name_es : p.name_en}`
-    ).join('\n');
-
     await saveState(whatsapp, {
-      ...state,
       current_step: 'ASK_QTY',
+      language: state.language,
+      account: state.account,
+      order: state.order,
       temp: { index: 0, allowed }
     });
 
+    const p = allowed[0];
     twiml.message(
       t(
-        `How many cases for ${allowed[0].name_en}? (min 10)`,
-        `¿Cuántas cajas para ${allowed[0].name_es}? (mín 10)`
+        `How many cases for ${p.name_en}? (min 10)`,
+        `¿Cuántas cajas para ${p.name_es}? (mín 10)`
       )
     );
     return twiml.toString();
@@ -189,17 +197,22 @@ async function handleMessage(from, body) {
     const { index, allowed } = state.temp;
     const product = allowed[index];
 
-    state.order.items.push({
+    const items = [...state.order.items, {
       key: product.key,
       qty,
       price: product.price
-    });
+    }];
 
-    state.temp.index++;
+    if (index + 1 < allowed.length) {
+      await saveState(whatsapp, {
+        current_step: 'ASK_QTY',
+        language: state.language,
+        account: state.account,
+        order: { items },
+        temp: { index: index + 1, allowed }
+      });
 
-    if (state.temp.index < allowed.length) {
-      await saveState(whatsapp, state);
-      const next = allowed[state.temp.index];
+      const next = allowed[index + 1];
       twiml.message(
         t(
           `How many cases for ${next.name_en}?`,
@@ -209,19 +222,20 @@ async function handleMessage(from, body) {
       return twiml.toString();
     }
 
-    /* ===== REVIEW ===== */
     let total = 0;
     let summary = '';
-
-    state.order.items.forEach(i => {
+    items.forEach(i => {
       const line = i.qty * i.price;
       total += line;
       summary += `${i.key}: ${i.qty} → $${line.toFixed(2)}\n`;
     });
 
     await saveState(whatsapp, {
-      ...state,
-      current_step: 'CONFIRM'
+      current_step: 'CONFIRM',
+      language: state.language,
+      account: state.account,
+      order: { items, total },
+      temp: {}
     });
 
     twiml.message(
@@ -251,7 +265,6 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
-  /* ===== FALLBACK ===== */
   twiml.message(
     t(
       'I didn’t understand that. Type "order" to start.',
