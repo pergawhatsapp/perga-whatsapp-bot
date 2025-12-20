@@ -44,6 +44,9 @@ app.post('/webhook', async (req, res) => {
   const response = await handleMessage(from, incomingMsg, req);
   res.set('Content-Type', 'text/xml');
   res.send(response);
+
+  state.temp_data = state.temp_data || {};
+  state.order_items = state.order_items || {};
 });
 
 app.listen(process.env.PORT, () => {
