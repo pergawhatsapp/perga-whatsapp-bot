@@ -21,7 +21,7 @@ async function getState(whatsapp) {
     .from('conversation_state')
     .select('*')
     .eq('whatsapp_number', whatsapp)
-    .single();
+    .maybeSingle();
 
   return data;
 }
@@ -116,7 +116,7 @@ async function handleMessage(from, body, req) {
 
     await saveState(from, {
       ...state,
-      current_step: 'ASK_QUANTITY',
+      order_items: state.order_items,
       temp_data: state.temp_data
     });
 
