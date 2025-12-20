@@ -1,4 +1,3 @@
-const twilio = require('twilio');
 const supabase = require('../services/supabase');
 
 const MessagingResponse = twilio.twiml.MessagingResponse;
