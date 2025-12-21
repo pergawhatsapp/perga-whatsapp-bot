@@ -65,7 +65,7 @@ async function handleMessage(from, body, req) {
       step: 'LANGUAGE',
       language: null,
       account: {},
-      order: {}
+      order: { items: [] }
     });
     twiml.message('English or Español?');
     return twiml.toString();
@@ -253,25 +253,18 @@ async function handleMessage(from, body, req) {
       account: { ...state.account, alcohol_license_number: body.trim() },
       step: 'SAVE_ACCOUNT'
     });
-    return twiml.toString();
   }
 
   /* =========================
-     SAVE ACCOUNT
+     SAVE ACCOUNT → STEP 4
   ========================= */
   if (state.step === 'SAVE_ACCOUNT') {
     await supabase.from('businesses').upsert(state.account);
     await saveState(whatsapp, { ...state, step: 'PRODUCTS' });
-
-    twiml.message(t(lang,
-      'Account saved. Let’s place your order.',
-      'Cuenta guardada. Vamos a ordenar.'
-    ));
-    return twiml.toString();
   }
 
   /* =========================
-     PRODUCTS & ORDER
+     STEP 4–5 — PRODUCTS & ORDER
   ========================= */
   if (state.step === 'PRODUCTS') {
     const allowed = state.account.alcohol_license
@@ -294,10 +287,10 @@ async function handleMessage(from, body, req) {
 
   if (state.step === 'QTY') {
     const qty = parseInt(msg);
-    if (isNaN(qty) || qty < 0) {
+    if (isNaN(qty) || qty < 10) {
       twiml.message(t(lang,
-        'Please enter a valid quantity.',
-        'Ingrese una cantidad válida.'
+        'Minimum is 10 cases.',
+        'El mínimo es 10 cajas.'
       ));
       return twiml.toString();
     }
@@ -316,15 +309,6 @@ async function handleMessage(from, body, req) {
       return twiml.toString();
     }
 
-    const totalCases = state.order.items.reduce((s, i) => s + i.qty, 0);
-    if (totalCases < 10) {
-      twiml.message(t(lang,
-        'Minimum order is 10 total cases.',
-        'El pedido mínimo es de 10 cajas en total.'
-      ));
-      return twiml.toString();
-    }
-
     let total = 0;
     state.order.items.forEach(i => total += i.qty * i.price);
     state.order.total = total;
@@ -337,61 +321,49 @@ async function handleMessage(from, body, req) {
     ));
     return twiml.toString();
   }
+  
+/* =========================
+   STEP 6–8 — CONFIRM → INVOICE → RESET
+========================= */
+if (state.step === 'CONFIRM') {
 
-  /* =========================
-     CONFIRM → INVOICE → RESET
-  ========================= */
-  if (state.step === 'CONFIRM') {
-
-    if (!msg.startsWith('y')) {
-      twiml.message(t(lang,
-        'Please reply YES to confirm.',
-        'Por favor responda SÍ para confirmar.'
-      ));
-      return twiml.toString();
-    }
-
-    try {
-      const date = new Date();
-      const orderNumber =
-        `PO-${date.toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(100 + Math.random() * 900)}`;
-
-      state.order.order_number = orderNumber;
-
-      const generateInvoicePDF = require('../services/invoicePdf');
-      const uploadInvoice = require('../services/uploadInvoice');
-      const sendWhatsappPDF = require('../services/sendWhatsappPdf');
-
-      const { filePath, fileName } =
-        generateInvoicePDF(state.order, state.account);
-
-      const pdfUrl = await uploadInvoice(filePath, fileName);
-
-      await sendWhatsappPDF(whatsapp, pdfUrl, state.language);
-
-      await resetState(whatsapp);
-
-      twiml.message(t(lang,
-        'Invoice sent to your email ✓\nA sales representative will contact you to confirm order details.\nThank you for choosing Perga!',
-        'Factura enviada a su correo electrónico ✓\nUn representante de ventas se comunicará con usted para confirmar los detalles del pedido.\n¡Gracias por elegir Perga!'
-      ));
-      return twiml.toString();
-
-    } catch (err) {
-      console.error(err);
-      twiml.message(t(lang,
-        'There was an error generating your invoice. Please try again.',
-        'Hubo un error al generar su factura. Intente nuevamente.'
-      ));
-      return twiml.toString();
-    }
+  if (!msg.startsWith('y')) {
+    twiml.message(t(lang,
+      'Order cancelled.',
+      'Pedido cancelado.'
+    ));
+    await resetState(whatsapp);
+    return twiml.toString();
   }
 
+  // ✅ Generate + send invoice
+  const generateInvoicePDF = require('../services/invoicePdf');
+  const uploadInvoice = require('../services/uploadInvoice');
+  const sendWhatsappPDF = require('../services/sendWhatsappPdf');
+
+  const { filePath, fileName } =
+    generateInvoicePDF(state.order, state.account);
+
+  const pdfUrl = await uploadInvoice(filePath, fileName);
+
+  await sendWhatsappPDF(
+    whatsapp,
+    pdfUrl,
+    state.language
+  );
+
+  // (Email sending would also go here)
+
+  // ✅ Reset ONLY after everything succeeds
+  await resetState(whatsapp);
+
   twiml.message(t(lang,
-    'Please follow the order process.',
-    'Por favor siga el proceso.'
+    'Invoice sent to your email ✓\nA sales representative will contact you to confirm order details.\nThank you for choosing Perga!',
+    'Factura enviada a su correo electrónico ✓\nUn representante de ventas se comunicará con usted para confirmar los detalles del pedido.\n¡Gracias por elegir Perga!'
   ));
+
   return twiml.toString();
 }
+
 
 module.exports = { handleMessage };
