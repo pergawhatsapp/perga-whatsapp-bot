@@ -213,7 +213,7 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'ALCOHOL_QUESTION') {
-    const yes = msg.startsWith('y');
+    const yes = msg.startsWith('y') || msg.startsWith('s');
     await saveState(phone, {
       ...state,
       account: { ...state.account, alcohol_license: yes },
@@ -362,6 +362,7 @@ await saveState(phone, {
   step: 'CONFIRM',
   order: {
     ...state.order,
+    items,
     subtotal,
     tax,
     total,
@@ -471,8 +472,12 @@ if (state.step === 'CONFIRM') {
 }
 
   
-module.exports = { handleMessage };
+// =====================
+// EXPORT
+// =====================
+module.exports = {
+  handleMessage
+};
 
-} // 👈 CLOSE handleMessage FUNCTION
 
 
