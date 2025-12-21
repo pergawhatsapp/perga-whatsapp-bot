@@ -254,7 +254,6 @@ async function handleMessage(from, body, req) {
       account: { ...state.account, alcohol_license_number: body.trim() },
       step: 'SAVE_ACCOUNT'
     });
-  }
 
   if (state.step === 'SAVE_ACCOUNT') {
     await supabase.from('businesses').upsert(state.account);
@@ -459,3 +458,4 @@ if (state.step === 'CONFIRM') {
 
   
 module.exports = { handleMessage };
+
