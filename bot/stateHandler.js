@@ -11,7 +11,6 @@ const PRODUCTS = [
   { key: 'COLA', en: 'Perga Cola', es: 'Perga Cola', price: 21.6, alcoholic: false },
   { key: 'ORANGE', en: 'Perga Orange', es: 'Perga Naranja', price: 21.6, alcoholic: false },
   { key: 'LIME', en: 'Perga Limon-Lime', es: 'Perga Limón-Lima', price: 21.6, alcoholic: false },
-  { key: 'MALTA', en: 'Malta Perga', es: 'Malta Perga', price: 21.6, alcoholic: false }
 ];
 
 // =====================
@@ -170,7 +169,7 @@ async function handleMessage(from, body, req) {
 
   twiml.message(
     resale
-      ? t(lang, 'Enter resale tax ID', 'Ingrese Resale tax ID de reventa')
+      ? t(lang, 'Enter resale tax ID', 'Ingrese tax ID de reventa (Resale) Ej: 12-3456789123-4' )
       : t(lang, 'Enter federal tax ID number', 'Ingrese federal tax ID (sunbiz) Ej: 12-3456789')
   );
   return twiml.toString();
@@ -390,5 +389,6 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
