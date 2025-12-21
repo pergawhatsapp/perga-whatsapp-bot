@@ -271,7 +271,7 @@ async function handleMessage(from, body, req) {
   if (state.step === 'SAVE_ACCOUNT') {
     await supabase.from('businesses').upsert(state.account);
     await saveState(phone, { ...state, step: 'PRODUCTS' });
-    twiml.message(t(lang, 'Account saved. (type ok)', 'Cuenta guardada.(escribe ok)'));
+    twiml.message(t(lang, 'start order. (type ok)', 'comencemos el pedido.(escribe ok)'));
     return twiml.toString();
   }
 
@@ -292,7 +292,7 @@ async function handleMessage(from, body, req) {
     const p = allowed[0];
     twiml.message(
       lang === 'es'
-        ? `${p.es}\n$${p.price.toFixed(2)} por caja (24 unidades)\n\n¿Cuántas cajas desea?`
+        ? `${p.es}\n$${p.price.toFixed(2)} por caja (24 unidades)\n\n¿Cuántas cajas desea? (min 10 cajas)`
         : `${p.en}\n$${p.price.toFixed(2)} per case (24-pack)\n\nHow many cases would you like?`
     );
     return twiml.toString();
@@ -315,7 +315,7 @@ async function handleMessage(from, body, req) {
       const p = allowed[state.order.index];
       twiml.message(
         lang === 'es'
-          ? `${p.es}\n$${p.price.toFixed(2)} por caja (24 unidades)\n\n¿Cuántas cajas desea?`
+          ? `${p.es}\n$${p.price.toFixed(2)} por caja (24 unidades)\n\n¿Cuántas cajas desea? (min 10 cajas)`
           : `${p.en}\n$${p.price.toFixed(2)} per case (24-pack)\n\nHow many cases would you like?`
       );
       return twiml.toString();
@@ -390,4 +390,5 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
