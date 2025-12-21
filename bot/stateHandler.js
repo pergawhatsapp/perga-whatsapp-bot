@@ -60,16 +60,19 @@ async function handleMessage(from, body, req) {
   /* =========================
      TRIGGER
   ========================= */
-  if ((msg === 'order' || msg === 'orden') && !state) {
-    await saveState(whatsapp, {
-      step: 'LANGUAGE',
-      language: null,
-      account: {},
-      order: {}
-    });
-    twiml.message('English or Español?');
-    return twiml.toString();
-  }
+  if (msg === 'order' || msg === 'orden') {
+  await resetState(whatsapp);
+
+  await saveState(whatsapp, {
+    step: 'LANGUAGE',
+    language: null,
+    account: {},
+    order: { items: [] }
+  });
+
+  twiml.message('English or Español?');
+  return twiml.toString();
+}
 
   if (!state) {
     twiml.message('Send "order" or "orden" to start.');
@@ -395,3 +398,4 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
