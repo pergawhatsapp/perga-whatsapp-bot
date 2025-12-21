@@ -324,4 +324,5 @@ async function handleMessage(from, body, req) {
   return twiml.toString();
 }
 
-module.exports = handleMessage;
+module.exports = { handleMessage };
+
