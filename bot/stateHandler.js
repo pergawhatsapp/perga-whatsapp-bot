@@ -3,6 +3,10 @@ const MessagingResponse = twilio.twiml.MessagingResponse;
 
 const supabase = require('../services/supabaseClient');
 
+const { generateInvoicePdf } = require('../services/invoicePdf');
+const { sendWhatsappPdf } = require('../services/sendWhatsappPdf');
+const { sendInvoiceEmail } = require('../services/email');
+
 // =====================
 // PRODUCTS
 // =====================
@@ -25,7 +29,7 @@ const t = (lang, en, es) => (lang === 'es' ? es : en);
 // STATE HELPERS
 // =====================
 async function getState(phone) {
-  const { data } = await supabase
+   { data } = await supabase
     .from('conversation_state')
     .select('*')
     .eq('whatsapp_number', phone)
@@ -386,34 +390,76 @@ summaryMessage.push(
   }
 
   // =====================
-  // STEP 6–8 — CONFIRM & RESET
-  // =====================
-  if (state.step === 'CONFIRM') {
-    if (!msg.startsWith('y')) {
-      await resetState(phone);
-      twiml.message(t(lang, 'Invoice sent to your email ✓\nA sales representative will contact you to confirm order details.\nThank you for choosing Perga!', 'Factura enviada a su correo electrónico ✓\nUn representante de ventas se comunicará con usted para confirmar los detalles del pedido.\n¡Gracias por elegir Perga!'));
-      return twiml.toString();
-    }
+// STEP 6–8 — CONFIRM & RESET
+// =====================
+if (state.step === 'CONFIRM') {
 
-    // 👉 invoice + WhatsApp + email handled elsewhere
-
+  // ❌ Cancel
+  if (!msg.startsWith('y')) {
     await resetState(phone);
-
-    twiml.message(t(lang,
-      'Invoice sent to your email ✓\nA sales representative will contact you to confirm order details.\nThank you for choosing Perga!',
-      'Factura enviada a su correo electrónico ✓\nUn representante de ventas se comunicará con usted para confirmar los detalles del pedido.\n¡Gracias por elegir Perga!'
-    ));
+    twiml.message(t(lang, 'Order cancelled.', 'Pedido cancelado.'));
     return twiml.toString();
   }
 
+  // ✅ STEP 5 FINAL — INVOICE + SEND
+  const orderNumber = `PO-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(Math.random()*900+100)}`;
+
+  const pdfPath = await generateInvoicePdf({
+    orderNumber,
+    business: state.account,
+    order: {
+      items: state.order.items,
+      subtotal: state.order.subtotal,
+      tax: state.order.tax,
+      total: state.order.total,
+      totalCases: state.order.totalCases
+    }
+  });
+
+  // WhatsApp → Customer
+  await sendWhatsappPdf(
+    phone,
+    pdfPath,
+    'Invoice from Perga Beverages'
+  );
+
+  // WhatsApp → Company
+  await sendWhatsappPdf(
+    process.env.COMPANY_WHATSAPP_NUMBER,
+    pdfPath,
+    `New Order ${orderNumber}`
+  );
+
+  // Email → Customer
+  await sendInvoiceEmail({
+    to: state.account.email,
+    subject: `Perga Invoice ${orderNumber}`,
+    text: 'Attached is your invoice. Thank you for your order.',
+    pdfPath
+  });
+
+  // Email → Company
+  await sendInvoiceEmail({
+    to: process.env.COMPANY_EMAIL,
+    subject: `New Order ${orderNumber}`,
+    text: 'New order invoice attached.',
+    pdfPath
+  });
+
+  // ✅ STEP 8 — RESET
+  await resetState(phone);
+
   twiml.message(t(lang,
-    'start order process (type ok).',
-    'Empezar Orden (responde ok).'
+    'Invoice sent to your email ✓\nA sales representative will contact you to confirm order details.\nThank you for choosing Perga!',
+    'Factura enviada a su correo electrónico ✓\nUn representante de ventas se comunicará con usted para confirmar los detalles del pedido.\n¡Gracias por elegir Perga!'
   ));
+
   return twiml.toString();
 }
 
+  
 module.exports = { handleMessage };
+
 
 
 
