@@ -160,25 +160,48 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'TAX_QUESTION') {
-    const resale = isYes(msg);
-    await saveState(phone, {
-      ...state,
-      account: { ...state.account, tax_type: resale ? 'resale' : 'federal' },
-      step: 'TAX_NUMBER'
-    });
+  const resale = isYes(msg);
 
-    twiml.message(t(lang, 'Enter federal tax ID number', 'Ingrese federal tax ID (sunbiz) Ej: 12-3456789'));
-    return twiml.toString();
+  await saveState(phone, {
+    ...state,
+    account: { ...state.account, tax_type: resale ? 'resale' : 'federal' },
+    step: resale ? 'TAX_RESALE' : 'TAX_FEDERAL'
+  });
+
+  twiml.message(
+    resale
+      ? t(lang, 'Enter resale tax ID', 'Ingrese Resale tax ID de reventa')
+      : t(lang, 'Enter federal tax ID number', 'Ingrese federal tax ID (sunbiz) Ej: 12-3456789')
+  );
+  return twiml.toString();
   }
 
-  if (state.step === 'TAX_NUMBER') {
-    await saveState(phone, {
-      ...state,
-      account: { ...state.account, tax_id: body.trim() },
-      step: 'BUSINESS_ADDRESS'
-    });
-    twiml.message(t(lang, 'Business address? Ex: 1234 NW 56th St, Miami FL,33123', 'Dirección del negocio? Ej: 1234 NW 56th St, Miami FL,33123'));
-    return twiml.toString();
+  if (state.step === 'TAX_RESALE') {
+  await saveState(phone, {
+    ...state,
+    account: { ...state.account, tax_id: body.trim() },
+    step: 'BUSINESS_ADDRESS'
+  });
+
+  twiml.message(t(lang,
+    'Business address? Ex: 1234 NW 56th St, Miami FL,33123',
+    'Dirección del negocio? Ej: 1234 NW 56th St, Miami FL,33123'
+  ));
+  return twiml.toString();
+}
+
+  if (state.step === 'TAX_FEDERAL') {
+  await saveState(phone, {
+    ...state,
+    account: { ...state.account, tax_id: body.trim() },
+    step: 'BUSINESS_ADDRESS'
+  });
+
+  twiml.message(t(lang,
+    'Business address? Ex: 1234 NW 56th St, Miami FL,33123',
+    'Dirección del negocio? Ej: 1234 NW 56th St, Miami FL,33123'
+  ));
+  return twiml.toString();
   }
 
   if (state.step === 'BUSINESS_ADDRESS') {
@@ -367,3 +390,4 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
