@@ -2,8 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const path = require('path');
-
-// ✅ IMPORTANT FIX: destructure the export
 const { handleMessage } = require('./bot/stateHandler');
 
 const app = express();
