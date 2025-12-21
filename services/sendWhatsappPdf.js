@@ -1,16 +1,17 @@
 const twilio = require('twilio');
-const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
 
-module.exports = async function sendWhatsappPDF(to, pdfUrl, language) {
-  const body =
-    language === 'es'
-      ? 'Aquí está su factura. Gracias por elegir Perga.'
-      : 'Here is your invoice. Thank you for choosing Perga.';
+const client = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
 
-  await client.messages.create({
-    from: 'whatsapp:+14155238886', // Twilio sandbox or approved number
+async function sendWhatsappPdf(to, pdfUrl) {
+  return client.messages.create({
+    from: process.env.TWILIO_WHATSAPP_NUMBER,
     to: `whatsapp:${to}`,
-    body,
+    body: 'Your invoice is attached.',
     mediaUrl: [pdfUrl]
   });
-};
+}
+
+module.exports = { sendWhatsappPdf };
