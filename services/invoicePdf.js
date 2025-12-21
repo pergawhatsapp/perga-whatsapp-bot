@@ -2,42 +2,90 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 
-module.exports = function generateInvoicePDF(order, business) {
-  const fileName = `invoice-${order.order_number}.pdf`;
-  const filePath = path.join('/tmp', fileName);
+module.exports = function generateInvoicePDF(order, account) {
+  try {
+    const invoicesDir = path.join(__dirname, '../invoices');
+    if (!fs.existsSync(invoicesDir)) {
+      fs.mkdirSync(invoicesDir);
+    }
 
-  const doc = new PDFDocument({ margin: 40 });
-  doc.pipe(fs.createWriteStream(filePath));
+    const orderNumber = `PO-${new Date()
+      .toISOString()
+      .slice(0,10)
+      .replace(/-/g,'')}-${Math.floor(Math.random()*900+100)}`;
 
-  doc.fontSize(20).text('PERGA DISTRIBUTORS', { align: 'center' });
-  doc.moveDown();
+    const fileName = `${orderNumber}.pdf`;
+    const filePath = path.join(invoicesDir, fileName);
 
-  doc.fontSize(12).text(`Order #: ${order.order_number}`);
-  doc.text(`Date: ${new Date().toLocaleString()}`);
-  doc.moveDown();
+    const doc = new PDFDocument({ margin: 50 });
+    doc.pipe(fs.createWriteStream(filePath));
 
-  doc.text(`Business: ${business.business_name}`);
-  doc.text(`Address: ${business.address}`);
-  doc.text(`Phone: ${business.phone}`);
-  doc.text(`Contact: ${business.contact_name}`);
-  doc.text(`Tax ID: ${business.tax_id}`);
+    /* ===== HEADER ===== */
+    doc
+      .fontSize(20)
+      .text('PERGA SALES ORDER', { align: 'center' })
+      .moveDown();
 
-  if (business.alcohol_license) {
-    doc.text(`Alcohol License #: ${business.alcohol_license_number}`);
+    doc.fontSize(10).text(`Order #: ${orderNumber}`);
+    doc.text(`Date: ${new Date().toLocaleString()}`);
+    doc.moveDown();
+
+    /* ===== BUSINESS INFO ===== */
+    doc.fontSize(12).text('Bill To:', { underline: true });
+    doc.fontSize(10)
+      .text(account.business_name || '')
+      .text(account.address || '')
+      .text(`Phone: ${account.phone || ''}`)
+      .text(`Email: ${account.email || ''}`)
+      .moveDown();
+
+    doc.text(
+      account.tax_type === 'resale'
+        ? `Resale Tax ID: ${account.tax_id}`
+        : `Federal Tax ID: ${account.tax_id}`
+    );
+
+    if (account.alcohol_license) {
+      doc.text(`Alcohol License #: ${account.alcohol_license_number}`);
+    }
+
+    doc.moveDown();
+
+    /* ===== ITEMS ===== */
+    doc.fontSize(12).text('Items:', { underline: true });
+    doc.moveDown(0.5);
+
+    let total = 0;
+
+    order.items.forEach(item => {
+      const lineTotal = item.qty * item.price;
+      total += lineTotal;
+
+      doc
+        .fontSize(10)
+        .text(
+          `${item.en} — ${item.qty} cases × $${item.price.toFixed(2)} = $${lineTotal.toFixed(2)}`
+        );
+    });
+
+    doc.moveDown();
+    doc.fontSize(12).text(`TOTAL: $${total.toFixed(2)}`, { align: 'right' });
+    doc.moveDown();
+
+    doc.fontSize(10).text('Payment Terms: Net 30 days');
+    doc.moveDown(2);
+
+    doc.text(
+      'Perga Beverages\nThank you for your business!',
+      { align: 'center' }
+    );
+
+    doc.end();
+
+    return { filePath, fileName };
+
+  } catch (err) {
+    console.error('PDF GENERATION ERROR:', err);
+    throw err;
   }
-
-  doc.moveDown().text('Items:', { underline: true });
-
-  order.items.forEach(i => {
-    doc.text(`${i.en || i.key} — ${i.qty} × $${i.price.toFixed(2)}`);
-  });
-
-  doc.moveDown();
-  doc.text(`TOTAL: $${order.total.toFixed(2)}`, { bold: true });
-  doc.moveDown();
-  doc.text('Payment Terms: Net 30 days');
-
-  doc.end();
-
-  return { filePath, fileName };
 };
