@@ -2,9 +2,6 @@ const twilio = require('twilio');
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
 const supabase = require('../services/supabaseClient');
-const { generateInvoicePdf } = require('../services/invoicePdf');
-const { sendWhatsappPdf } = require('../services/sendWhatsappPdf');
-const { sendInvoiceEmail } = require('../services/email');
 
 // =====================
 // PRODUCTS
@@ -46,7 +43,8 @@ async function saveState(phone, state) {
 }
 
 async function resetState(phone) {
-  await supabase.from('conversation_state')
+  await supabase
+    .from('conversation_state')
     .delete()
     .eq('whatsapp_number', phone);
 }
@@ -66,7 +64,7 @@ async function handleMessage(from, body, req) {
   let state = await getState(phone);
 
   // =====================
-  // TRIGGER
+  // START
   // =====================
   if (!state) {
     if (msg === 'order' || msg === 'orden') {
@@ -79,6 +77,7 @@ async function handleMessage(from, body, req) {
       twiml.message('English or Español?');
       return twiml.toString();
     }
+
     twiml.message('Send "order" or "orden" to start.');
     return twiml.toString();
   }
@@ -99,17 +98,11 @@ async function handleMessage(from, body, req) {
   // ACCOUNT TYPE
   // =====================
   if (state.step === 'ACCOUNT_TYPE') {
-    const existing =
-      msg.includes('exist') ||
-      msg.includes('ya') ||
-      msg.includes('tengo') ||
-      msg.includes('old');
-
+    const existing = msg.includes('exist') || msg.includes('old');
     await saveState(phone, {
       ...state,
       step: existing ? 'EXISTING_NAME' : 'NEW_BUSINESS_NAME'
     });
-
     twiml.message(t(lang, 'Business name?', '¿Nombre del negocio?'));
     return twiml.toString();
   }
@@ -137,7 +130,7 @@ async function handleMessage(from, body, req) {
   }
 
   // =====================
-  // NEW ACCOUNT FLOW
+  // NEW ACCOUNT
   // =====================
   if (state.step === 'NEW_BUSINESS_NAME') {
     await saveState(phone, {
@@ -150,17 +143,11 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'BUSINESS_EMAIL') {
-    if (!body.includes('@')) {
-      twiml.message(t(lang, 'Enter a valid email.', 'Ingrese un correo válido.'));
-      return twiml.toString();
-    }
-
     await saveState(phone, {
       ...state,
       account: { ...state.account, email: body.trim() },
       step: 'TAX_QUESTION'
     });
-
     twiml.message(t(lang,
       'Do you have a resale tax ID? (yes/no)',
       '¿Tiene tax ID de reventa? (sí/no)'
@@ -173,20 +160,9 @@ async function handleMessage(from, body, req) {
     await saveState(phone, {
       ...state,
       account: { ...state.account, tax_type: resale ? 'resale' : 'federal' },
-      step: 'TAX_NUMBER'
-    });
-
-    twiml.message(t(lang, 'Enter federal tax ID number', 'Ingrese federal tax ID (sunbiz) EX 12-3456789'));
-    return twiml.toString();
-  }
-
-  if (state.step === 'TAX_NUMBER') {
-    await saveState(phone, {
-      ...state,
-      account: { ...state.account, tax_id: body.trim() },
       step: 'BUSINESS_ADDRESS'
     });
-    twiml.message(t(lang, 'Business address? EX 1234 NW 56th St, Miami FL,33123', 'Dirección del negocio? EX 1234 NW 56th St, Miami FL,33123'));
+    twiml.message(t(lang, 'Business address?', 'Dirección del negocio?'));
     return twiml.toString();
   }
 
@@ -218,36 +194,6 @@ async function handleMessage(from, body, req) {
     await saveState(phone, {
       ...state,
       account: { ...state.account, alcohol_license: yes },
-      step: yes ? 'ALCOHOL_PHOTO' : 'SAVE_ACCOUNT'
-    });
-
-    twiml.message(yes
-      ? t(lang, 'Upload license photo', 'Suba la licencia')
-      : t(lang, 'Saving account… (type ok)', 'Guardando cuenta… (ok)')
-    );
-    return twiml.toString();
-  }
-
-  if (state.step === 'ALCOHOL_PHOTO') {
-    if (!mediaType?.startsWith('image/')) {
-      twiml.message(t(lang, 'Upload a photo.', 'Suba una imagen.'));
-      return twiml.toString();
-    }
-
-    await saveState(phone, {
-      ...state,
-      account: { ...state.account, alcohol_license_url: mediaUrl },
-      step: 'ALCOHOL_NUMBER'
-    });
-
-    twiml.message(t(lang, 'License number?', 'Número de licencia?'));
-    return twiml.toString();
-  }
-
-  if (state.step === 'ALCOHOL_NUMBER') {
-    await saveState(phone, {
-      ...state,
-      account: { ...state.account, alcohol_license_number: body.trim() },
       step: 'SAVE_ACCOUNT'
     });
     twiml.message(t(lang, 'Saving account…', 'Guardando cuenta…'));
@@ -257,12 +203,12 @@ async function handleMessage(from, body, req) {
   if (state.step === 'SAVE_ACCOUNT') {
     await supabase.from('businesses').upsert(state.account);
     await saveState(phone, { ...state, step: 'PRODUCTS' });
-    twiml.message(t(lang, 'Account saved.', 'Cuenta guardada.'));
+    twiml.message(t(lang, 'Account saved. Let’s order.', 'Cuenta guardada.'));
     return twiml.toString();
   }
 
   // =====================
-  // PRODUCTS & QTY
+  // PRODUCTS
   // =====================
   if (state.step === 'PRODUCTS') {
     const allowed = state.account.alcohol_license
@@ -306,19 +252,16 @@ async function handleMessage(from, body, req) {
 
     let totalCases = 0;
     let subtotal = 0;
-
     for (const i of items) {
-      if (i.qty > 0) {
-        totalCases += i.qty;
-        subtotal += i.qty * i.price;
-      }
+      totalCases += i.qty;
+      subtotal += i.qty * i.price;
     }
 
     if (totalCases < 10) {
-      await saveState(phone, { ...state, step: 'PRODUCTS' });
+      await resetState(phone);
       twiml.message(t(lang,
-        'Minimum 10 total cases. Start again.',
-        'Mínimo 10 cajas. Intente de nuevo.'
+        'Minimum order is 10 total cases.',
+        'El pedido mínimo es de 10 cajas.'
       ));
       return twiml.toString();
     }
@@ -333,7 +276,7 @@ async function handleMessage(from, body, req) {
     });
 
     twiml.message(
-      `${t(lang, 'Total:', 'Total:')} $${total.toFixed(2)}\n` +
+      `Total: $${total.toFixed(2)}\n` +
       t(lang, 'Reply YES to confirm', 'Responda SÍ para confirmar')
     );
     return twiml.toString();
@@ -349,33 +292,26 @@ async function handleMessage(from, body, req) {
       return twiml.toString();
     }
 
-    const orderNumber = `PO-${Date.now()}`;
-    const pdfPath = await generateInvoicePdf({
-      orderNumber,
-      business: state.account,
-      order: state.order
-    });
-
-    await sendWhatsappPdf(phone, pdfPath, 'Invoice from Perga');
-    await sendInvoiceEmail({
-      to: state.account.email,
-      subject: `Invoice ${orderNumber}`,
-      text: 'Attached invoice.',
-      pdfPath
+    await supabase.from('orders').insert({
+      phone,
+      business_name: state.account.business_name,
+      items: state.order.items,
+      total: state.order.total,
+      created_at: new Date()
     });
 
     await resetState(phone);
 
     twiml.message(t(lang,
-      'Invoice sent. Thank you!',
-      'Factura enviada. ¡Gracias!'
+         '✅ Invoice will soon be sent to your email ✓\n A sales representative will contact you to confirm order details.\nThank you for choosing Perga!',
+         '✅ La factura se enviará pronto a su correo electrónico. ✓\nUn representante de ventas se comunicará con usted para confirmar los detalles del pedido.\n¡Gracias por elegir Perga!'
     ));
     return twiml.toString();
   }
 
-  twiml.message('Something went wrong. Send "order" to restart.');
+  twiml.message('Send "order" to start again.');
   return twiml.toString();
 }
 
-module.exports = { handleMessage };
-
+// ✅ CORRECT EXPORT
+module.exports = handleMessage;
