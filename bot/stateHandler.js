@@ -304,34 +304,85 @@ async function handleMessage(from, body, req) {
     }
 
     // ===== SUMMARY + MIN 10 TOTAL CASES =====
-    let totalCases = 0;
-    let subtotal = 0;
-    let lines = [];
+      let totalCases = 0;
+      let subtotal = 0;
+      let tax = 0;
+      let total = 0;
+      let lines = [];
 
-    for (const item of items) {
-      if (item.qty > 0) {
-        totalCases += item.qty;
-        const lineTotal = item.qty * item.price;
-        subtotal += lineTotal;
-        lines.push(`${item.en} – ${item.qty} × $${item.price.toFixed(2)} = $${lineTotal.toFixed(2)}`);
-      }
-    }
+for (const item of items) {
+  if (item.qty > 0) {
+    totalCases += item.qty;
+    const lineTotal = item.qty * item.price;
+    subtotal += lineTotal;
+    lines.push(
+      `${item.en} – ${item.qty} × $${item.price.toFixed(2)} = $${lineTotal.toFixed(2)}`
+    );
+  }
+}
 
-    if (totalCases < 10) {
-      twiml.message(t(lang,
-        'Minimum order is 10 total cases. Please adjust quantities.',
-        'El pedido mínimo es de 10 cajas en total.'
-      ));
-      return twiml.toString();
-    }
+// ===== MINIMUM TOTAL CASES =====
+if (totalCases < 10) {
+  twiml.message(t(lang,
+    'Minimum order is 10 total cases. Please adjust quantities.',
+    'El pedido mínimo es de 10 cajas en total.'
+  ));
+  return twiml.toString();
+}
 
-    await saveState(phone, { ...state, step: 'CONFIRM', order: { ...state.order, subtotal } });
+// ===== TAX RULE =====
+const hasResaleTax = state.account.tax_type === 'resale';
 
-    twiml.message(t(lang,
-      `Order Summary:\n${lines.join('\n')}\n\nSubtotal: $${subtotal.toFixed(2)}\nReply YES to confirm`,
-      `Resumen del pedido:\n${lines.join('\n')}\n\nSubtotal: $${subtotal.toFixed(2)}\nResponda SÍ para confirmar`
-    ));
-    return twiml.toString();
+if (!hasResaleTax) {
+  tax = subtotal * 0.07;
+}
+
+total = subtotal + tax;
+
+// ===== SAVE TOTALS =====
+await saveState(phone, {
+  ...state,
+  step: 'CONFIRM',
+  order: {
+    ...state.order,
+    subtotal,
+    tax,
+    total,
+    totalCases
+  }
+});
+
+// ===== MESSAGE =====
+let summaryMessage = [
+  ...(lang === 'es'
+    ? ['Resumen del pedido:']
+    : ['Order Summary:']),
+  ...lines,
+  '',
+  `Subtotal: $${subtotal.toFixed(2)}`
+];
+
+if (!hasResaleTax) {
+  summaryMessage.push(
+    lang === 'es'
+      ? `Impuesto (7%): $${tax.toFixed(2)}`
+      : `Tax (7%): $${tax.toFixed(2)}`
+  );
+}
+
+summaryMessage.push(
+  lang === 'es'
+    ? `Total: $${total.toFixed(2)}`
+    : `Total: $${total.toFixed(2)}`,
+  '',
+  lang === 'es'
+    ? 'Responda SÍ para confirmar'
+    : 'Reply YES to confirm'
+);
+
+  twiml.message(summaryMessage.join('\n'));
+  return twiml.toString();
+
   }
 
   // =====================
@@ -363,5 +414,6 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
