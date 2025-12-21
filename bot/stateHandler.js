@@ -176,7 +176,7 @@ async function handleMessage(from, body, req) {
       step: 'TAX_NUMBER'
     });
 
-    twiml.message(t(lang, 'Enter tax ID number', 'Ingrese tax ID'));
+    twiml.message(t(lang, 'Enter federal tax ID number', 'Ingrese federal tax ID (sunbiz) EX 12-3456789'));
     return twiml.toString();
   }
 
@@ -186,7 +186,7 @@ async function handleMessage(from, body, req) {
       account: { ...state.account, tax_id: body.trim() },
       step: 'BUSINESS_ADDRESS'
     });
-    twiml.message(t(lang, 'Business address?', 'Dirección del negocio?'));
+    twiml.message(t(lang, 'Business address? EX 1234 NW 56th St, Miami FL,33123', 'Dirección del negocio? EX 1234 NW 56th St, Miami FL,33123'));
     return twiml.toString();
   }
 
@@ -378,3 +378,4 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
