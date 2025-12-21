@@ -134,7 +134,7 @@ async function handleMessage(from, body, req) {
       account: { business_name: body.trim(), phone },
       step: 'BUSINESS_EMAIL'
     });
-    twiml.message(t(lang, 'Business email?', 'Correo del negocio?'));
+    twiml.message(t(lang, 'Business email?', 'Correo electrónico del negocio?'));
     return twiml.toString();
   }
 
@@ -151,8 +151,8 @@ async function handleMessage(from, body, req) {
     });
 
     twiml.message(t(lang,
-      'Do you have a resale tax ID? (yes/no)',
-      '¿Tiene tax ID de reventa? (sí/no)'
+      'Do you have a Resale tax ID? (yes/no)',
+      '¿Tiene Resale tax ID de reventa? (sí/no)'
     ));
     return twiml.toString();
   }
@@ -165,7 +165,7 @@ async function handleMessage(from, body, req) {
       step: 'TAX_NUMBER'
     });
 
-    twiml.message(t(lang, 'Enter federal tax ID number', 'Ingrese federal tax ID (sunbiz) EX 12-3456789'));
+    twiml.message(t(lang, 'Enter federal tax ID number', 'Ingrese federal tax ID (sunbiz) Ej: 12-3456789'));
     return twiml.toString();
   }
 
@@ -175,7 +175,7 @@ async function handleMessage(from, body, req) {
       account: { ...state.account, tax_id: body.trim() },
       step: 'BUSINESS_ADDRESS'
     });
-    twiml.message(t(lang, 'Business address? EX 1234 NW 56th St, Miami FL,33123', 'Dirección del negocio? EX 1234 NW 56th St, Miami FL,33123'));
+    twiml.message(t(lang, 'Business address? Ex: 1234 NW 56th St, Miami FL,33123', 'Dirección del negocio? Ej: 1234 NW 56th St, Miami FL,33123'));
     return twiml.toString();
   }
 
@@ -185,7 +185,7 @@ async function handleMessage(from, body, req) {
       account: { ...state.account, address: body.trim() },
       step: 'CONTACT_NAME'
     });
-    twiml.message(t(lang, 'Contact name?', 'Nombre del contacto?'));
+    twiml.message(t(lang, 'Contact name?', 'Nombre del contacto? (Ej: John Doe)'));
     return twiml.toString();
   }
 
@@ -211,7 +211,7 @@ async function handleMessage(from, body, req) {
     });
 
     twiml.message(yes
-      ? t(lang, 'Upload license photo', 'Suba la licencia')
+      ? t(lang, 'Upload license photo', 'Suba la foto de la licencia de alcohol')
       : t(lang, 'Saving account… (type ok)', 'Guardando cuenta… (ok)')
     );
     return twiml.toString();
@@ -221,7 +221,6 @@ async function handleMessage(from, body, req) {
     if (!mediaType?.startsWith('image/')) {
       twiml.message(t(lang, 'Upload a photo.', 'Suba una imagen.'));
       return twiml.toString();
-    }
 
     await saveState(phone, {
       ...state,
@@ -239,14 +238,14 @@ async function handleMessage(from, body, req) {
       account: { ...state.account, alcohol_license_number: body.trim() },
       step: 'SAVE_ACCOUNT'
     });
-    twiml.message(t(lang, 'Saving account…', 'Guardando cuenta…'));
+    twiml.message(t(lang, 'Saving account…(type ok)', 'Guardando cuenta… (escribe ok)'));
     return twiml.toString();
   }
 
   if (state.step === 'SAVE_ACCOUNT') {
     await supabase.from('businesses').upsert(state.account);
     await saveState(phone, { ...state, step: 'PRODUCTS' });
-    twiml.message(t(lang, 'Account saved.', 'Cuenta guardada.'));
+    twiml.message(t(lang, 'Account saved. (type ok)', 'Cuenta guardada.(escribe ok)'));
     return twiml.toString();
   }
   // =====================
@@ -373,5 +372,6 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
