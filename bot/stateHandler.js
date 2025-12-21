@@ -249,11 +249,18 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'ALCOHOL_NUMBER') {
-    await saveState(phone, {
-      ...state,
-      account: { ...state.account, alcohol_license_number: body.trim() },
-      step: 'SAVE_ACCOUNT'
-    });
+  await saveState(phone, {
+    ...state,
+    account: { ...state.account, alcohol_license_number: body.trim() },
+    step: 'SAVE_ACCOUNT'
+  });
+
+  twiml.message(t(lang,
+    'Saving account… (type ok)',
+    'Guardando cuenta… (responde ok)'
+  ));
+  return twiml.toString();
+}
 
   if (state.step === 'SAVE_ACCOUNT') {
     await supabase.from('businesses').upsert(state.account);
@@ -458,4 +465,5 @@ if (state.step === 'CONFIRM') {
 
   
 module.exports = { handleMessage };
+
 
