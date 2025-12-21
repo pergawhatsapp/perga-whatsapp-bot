@@ -1,23 +1,19 @@
-const sgMail = require('@sendgrid/mail');
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 async function sendInvoiceEmail(to, pdfBuffer) {
-  const msg = {
+  await resend.emails.send({
+    from: process.env.EMAIL_FROM,
     to,
-    from: process.env.COMPANY_EMAIL,
-    subject: 'Perga Sales Order Invoice',
-    text: 'Please find your invoice attached.',
+    subject: 'Perga Invoice',
+    html: '<p>Your invoice is attached.</p>',
     attachments: [
       {
-        content: pdfBuffer.toString('base64'),
         filename: 'invoice.pdf',
-        type: 'application/pdf',
-        disposition: 'attachment'
+        content: pdfBuffer.toString('base64')
       }
     ]
-  };
-
-  await sgMail.send(msg);
+  });
 }
 
 module.exports = { sendInvoiceEmail };
