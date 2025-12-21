@@ -264,7 +264,14 @@ async function handleMessage(from, body, req) {
 
   if (state.step === 'SAVE_ACCOUNT') {
     await supabase.from('businesses').upsert(state.account);
+
     await saveState(phone, { ...state, step: 'PRODUCTS' });
+
+  twiml.message(t(lang,
+    'Account saved. Let’s place your order.',
+    'Cuenta guardada. Vamos a ordenar.'
+  ));
+  return twiml.toString();
   }
 
   // =====================
@@ -465,5 +472,6 @@ if (state.step === 'CONFIRM') {
 
   
 module.exports = { handleMessage };
+
 
 
