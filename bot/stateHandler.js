@@ -473,5 +473,6 @@ if (state.step === 'CONFIRM') {
   
 module.exports = { handleMessage };
 
+} // 👈 CLOSE handleMessage FUNCTION
 
 
