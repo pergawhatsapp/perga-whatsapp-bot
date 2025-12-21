@@ -230,57 +230,91 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'QTY') {
-    const qty = parseInt(msg, 10);
-    if (isNaN(qty) || qty < 0) {
-      twiml.message(t(lang, 'Enter a valid number.', 'Ingrese un número válido.'));
-      return twiml.toString();
-    }
-
-    const { allowed, index, items } = state.order;
-    items.push({ ...allowed[index], qty });
-
-    if (index + 1 < allowed.length) {
-      state.order.index++;
-      await saveState(phone, state);
-      const p = allowed[state.order.index];
-      twiml.message(t(lang,
-        `How many cases of ${p.en}?`,
-        `¿Cuántas cajas de ${p.es}?`
-      ));
-      return twiml.toString();
-    }
-
-    let totalCases = 0;
-    let subtotal = 0;
-    for (const i of items) {
-      totalCases += i.qty;
-      subtotal += i.qty * i.price;
-    }
-
-    if (totalCases < 10) {
-      await resetState(phone);
-      twiml.message(t(lang,
-        'Minimum order is 10 total cases.',
-        'El pedido mínimo es de 10 cajas.'
-      ));
-      return twiml.toString();
-    }
-
-    const tax = state.account.tax_type === 'resale' ? 0 : subtotal * 0.07;
-    const total = subtotal + tax;
-
-    await saveState(phone, {
-      ...state,
-      step: 'CONFIRM',
-      order: { items, subtotal, tax, total, totalCases }
-    });
-
-    twiml.message(
-      `Total: $${total.toFixed(2)}\n` +
-      t(lang, 'Reply YES to confirm', 'Responda SÍ para confirmar')
-    );
+  const qty = parseInt(msg, 10);
+  if (isNaN(qty) || qty < 0) {
+    twiml.message(t(lang, 'Enter a valid number.', 'Ingrese un número válido.'));
     return twiml.toString();
   }
+
+  const { allowed, index, items } = state.order;
+  items.push({ ...allowed[index], qty });
+
+  // Ask next product
+  if (index + 1 < allowed.length) {
+    state.order.index++;
+    await saveState(phone, state);
+
+    const p = allowed[state.order.index];
+    twiml.message(t(lang,
+      `How many cases of ${p.en}?`,
+      `¿Cuántas cajas de ${p.es}?`
+    ));
+    return twiml.toString();
+  }
+
+  // =====================
+  // CALCULATE TOTALS
+  // =====================
+  let subtotal = 0;
+  let totalCases = 0;
+  let summaryLines = [];
+
+  for (const i of items) {
+    if (i.qty > 0) {
+      const lineTotal = i.qty * i.price;
+      subtotal += lineTotal;
+      totalCases += i.qty;
+
+      summaryLines.push(
+        `${lang === 'es' ? i.es : i.en} — ${i.qty} x $${i.price.toFixed(2)} = $${lineTotal.toFixed(2)}`
+      );
+    }
+  }
+
+  if (totalCases < 10) {
+    await resetState(phone);
+    twiml.message(t(lang,
+      'Minimum order is 10 total cases.',
+      'El pedido mínimo es de 10 cajas.'
+    ));
+    return twiml.toString();
+  }
+
+  const taxRate = state.account.tax_type === 'resale' ? 0 : 0.07;
+  const tax = subtotal * taxRate;
+  const total = subtotal + tax;
+
+  // =====================
+  // SAVE CONFIRM STATE
+  // =====================
+  await saveState(phone, {
+    ...state,
+    step: 'CONFIRM',
+    order: {
+      items,
+      subtotal,
+      tax,
+      total,
+      totalCases
+    }
+  });
+
+  // =====================
+  // SEND ORDER REVIEW
+  // =====================
+  const reviewMessage =
+    `🧾 ${t(lang, 'ORDER SUMMARY', 'RESUMEN DEL PEDIDO')}\n\n` +
+    summaryLines.join('\n') +
+    `\n\nSubtotal: $${subtotal.toFixed(2)}` +
+    `\n${taxRate === 0 ? t(lang, 'Tax: EXEMPT', 'Impuesto: EXENTO') : `Tax (7%): $${tax.toFixed(2)}`}` +
+    `\nTotal: $${total.toFixed(2)}\n\n` +
+    t(lang, 'Reply YES to confirm or NO to cancel',
+              'Responda SÍ para confirmar o NO para cancelar');
+
+  twiml.message(reviewMessage);
+  return twiml.toString();
+}
+
 
   // =====================
   // CONFIRM
@@ -315,3 +349,4 @@ async function handleMessage(from, body, req) {
 
 // ✅ CORRECT EXPORT
 module.exports = handleMessage;
+
