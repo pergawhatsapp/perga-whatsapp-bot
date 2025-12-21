@@ -460,8 +460,4 @@ if (state.step === 'CONFIRM') {
   
 module.exports = { handleMessage };
 
-
-
-
-
-
+}
