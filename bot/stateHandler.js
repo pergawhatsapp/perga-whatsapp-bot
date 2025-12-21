@@ -43,8 +43,7 @@ async function saveState(phone, state) {
 }
 
 async function resetState(phone) {
-  await supabase
-    .from('conversation_state')
+  await supabase.from('conversation_state')
     .delete()
     .eq('whatsapp_number', phone);
 }
@@ -56,6 +55,9 @@ async function handleMessage(from, body, req) {
   const twiml = new MessagingResponse();
   const phone = normalize(from);
   const msg = lower(body);
+
+  const mediaType = req.body.MediaContentType0;
+  const mediaUrl = req.body.MediaUrl0;
 
   let state = await getState(phone);
 
@@ -218,9 +220,10 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'ALCOHOL_PHOTO') {
-    if (!mediaType?.startsWith('image/')) {
+    if (!mediaType || !mediaType.startsWith('image/')) {
       twiml.message(t(lang, 'Upload a photo.', 'Suba una imagen.'));
       return twiml.toString();
+    }
 
     await saveState(phone, {
       ...state,
@@ -248,8 +251,9 @@ async function handleMessage(from, body, req) {
     twiml.message(t(lang, 'Account saved. (type ok)', 'Cuenta guardada.(escribe ok)'));
     return twiml.toString();
   }
+
   // =====================
-  // PRODUCTS
+  // PRODUCTS & ORDER FLOW
   // =====================
   if (state.step === 'PRODUCTS') {
     const allowed = state.account.alcohol_license
@@ -271,9 +275,6 @@ async function handleMessage(from, body, req) {
     return twiml.toString();
   }
 
-  // =====================
-  // QUANTITY LOOP
-  // =====================
   if (state.step === 'QTY') {
     const qty = parseInt(msg, 10);
     if (isNaN(qty) || qty < 0) {
@@ -297,9 +298,6 @@ async function handleMessage(from, body, req) {
       return twiml.toString();
     }
 
-    // =====================
-    // TOTALS
-    // =====================
     let subtotal = 0;
     let totalCases = 0;
     let summary = [];
@@ -340,9 +338,6 @@ async function handleMessage(from, body, req) {
     return twiml.toString();
   }
 
-  // =====================
-  // CONFIRM
-  // =====================
   if (state.step === 'CONFIRM') {
     if (!isYes(msg)) {
       await resetState(phone);
@@ -372,6 +367,3 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
-
-
-
