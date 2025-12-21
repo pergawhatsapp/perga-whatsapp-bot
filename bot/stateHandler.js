@@ -1,8 +1,8 @@
 const Twilio = require('twilio');
-const { supabase } = require('./supabaseClient');
-const { generateInvoicePDF } = require('./invoice');
-const { sendWhatsAppPDF } = require('./whatsapp-pdf');
-const { sendInvoiceEmail } = require('./email');
+const { supabase } = require('../supabaseClient');
+const { generateInvoicePDF } = require('../invoice');
+const { sendWhatsAppPDF } = require('../whatsapp-pdf');
+const { sendInvoiceEmail } = require('../email');
 
 const PRODUCTS = {
   beer: { name: 'Perga Beer 5.2%', price: 25.4 },
@@ -176,3 +176,4 @@ async function handleMessage(req, res) {
 }
 
 module.exports = { handleMessage };
+
