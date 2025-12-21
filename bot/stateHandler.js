@@ -17,8 +17,6 @@ const PRODUCTS = [
 /* =========================
    HELPERS
 ========================= */
-const normalizeWhatsApp = from => from.replace('whatsapp:', '');
-
 async function getState(whatsapp) {
   const { data } = await supabase
     .from('conversation_state')
@@ -41,25 +39,26 @@ async function saveState(whatsapp, patch) {
 ========================= */
 async function handleMessage(from, body) {
   const twiml = new MessagingResponse();
-  const whatsapp = normalizeWhatsApp(from);
+  const whatsapp = from; // ✅ FIX: DO NOT NORMALIZE
   const msg = (body || '').trim().toLowerCase();
 
   let state = await getState(whatsapp);
 
-  /* ===== BOT TRIGGER ===== */
-  if (msg === 'order' || msg === 'orden') {
-  await saveState(whatsapp, {
-    current_step: 'LANGUAGE',
-    language: null,
-    account: {},
-    order: { items: [] },
-    temp: {}
-  });
+  /* ===== BOT TRIGGER (ONLY IF NO STATE) ===== */
+  if (!state && (msg === 'order' || msg === 'orden')) {
+    await saveState(whatsapp, {
+      current_step: 'LANGUAGE',
+      language: null,
+      account: {},
+      order: { items: [] },
+      temp: {}
+    });
 
-  twiml.message('English or Español?');
-  return twiml.toString();
-}
+    twiml.message('English or Español?');
+    return twiml.toString();
+  }
 
+  /* ===== NO STATE FALLBACK ===== */
   if (!state) {
     twiml.message('Send "Order" or "Orden" to start.');
     return twiml.toString();
@@ -69,14 +68,12 @@ async function handleMessage(from, body) {
 
   /* ===== LANGUAGE ===== */
   if (state.current_step === 'LANGUAGE') {
-    const language = msg.includes('es') ? 'es' : 'en';
+    const language = msg.startsWith('es') ? 'es' : 'en';
 
     await saveState(whatsapp, {
-      current_step: 'ACCOUNT_TYPE',
+      ...state,
       language,
-      account: state.account,
-      order: state.order,
-      temp: {}
+      current_step: 'ACCOUNT_TYPE'
     });
 
     twiml.message(
@@ -92,11 +89,8 @@ async function handleMessage(from, body) {
     const isExisting = msg.includes('exist');
 
     await saveState(whatsapp, {
-      current_step: isExisting ? 'EXISTING_NAME' : 'NEW_BUSINESS_NAME',
-      language: state.language,
-      account: state.account,
-      order: state.order,
-      temp: {}
+      ...state,
+      current_step: isExisting ? 'EXISTING_NAME' : 'NEW_BUSINESS_NAME'
     });
 
     twiml.message(t('Business name?', '¿Nombre del negocio?'));
@@ -116,11 +110,9 @@ async function handleMessage(from, body) {
 
     if (!business) {
       await saveState(whatsapp, {
+        ...state,
         current_step: 'ACCOUNT_TYPE',
-        language: state.language,
-        account: {},
-        order: state.order,
-        temp: {}
+        account: {}
       });
 
       twiml.message(
@@ -133,11 +125,10 @@ async function handleMessage(from, body) {
     }
 
     await saveState(whatsapp, {
-      current_step: 'SELECT_PRODUCTS',
-      language: state.language,
+      ...state,
       account: business,
       order: { items: [] },
-      temp: {}
+      current_step: 'SELECT_PRODUCTS'
     });
 
     twiml.message(
@@ -146,14 +137,13 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
-  /* ===== NEW ACCOUNT (TEMP) ===== */
+  /* ===== NEW ACCOUNT ===== */
   if (state.current_step === 'NEW_BUSINESS_NAME') {
     await saveState(whatsapp, {
-      current_step: 'SELECT_PRODUCTS',
-      language: state.language,
+      ...state,
       account: { business_name: body.trim(), alcohol_license: false },
       order: { items: [] },
-      temp: {}
+      current_step: 'SELECT_PRODUCTS'
     });
 
     twiml.message(
@@ -169,10 +159,8 @@ async function handleMessage(from, body) {
       : PRODUCTS.filter(p => !p.alcoholic);
 
     await saveState(whatsapp, {
+      ...state,
       current_step: 'ASK_QTY',
-      language: state.language,
-      account: state.account,
-      order: state.order,
       temp: { index: 0, allowed }
     });
 
@@ -188,7 +176,7 @@ async function handleMessage(from, body) {
 
   /* ===== QUANTITY LOOP ===== */
   if (state.current_step === 'ASK_QTY') {
-    const qty = parseInt(msg);
+    const qty = parseInt(msg, 10);
     if (isNaN(qty) || qty < 10) {
       twiml.message(t('Minimum is 10 cases.', 'El mínimo es 10 cajas.'));
       return twiml.toString();
@@ -205,9 +193,7 @@ async function handleMessage(from, body) {
 
     if (index + 1 < allowed.length) {
       await saveState(whatsapp, {
-        current_step: 'ASK_QTY',
-        language: state.language,
-        account: state.account,
+        ...state,
         order: { items },
         temp: { index: index + 1, allowed }
       });
@@ -231,10 +217,9 @@ async function handleMessage(from, body) {
     });
 
     await saveState(whatsapp, {
-      current_step: 'CONFIRM',
-      language: state.language,
-      account: state.account,
+      ...state,
       order: { items, total },
+      current_step: 'CONFIRM',
       temp: {}
     });
 
@@ -265,6 +250,7 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
+  /* ===== FALLBACK ===== */
   twiml.message(
     t(
       'I didn’t understand that. Type "order" to start.',
