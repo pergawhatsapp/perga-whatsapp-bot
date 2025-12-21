@@ -29,7 +29,7 @@ const t = (lang, en, es) => (lang === 'es' ? es : en);
 // STATE HELPERS
 // =====================
 async function getState(phone) {
-   { data } = await supabase
+  const { data } = await supabase
     .from('conversation_state')
     .select('*')
     .eq('whatsapp_number', phone)
@@ -262,7 +262,7 @@ async function handleMessage(from, body, req) {
   }
 
   // =====================
-  // STEP 4–5 — PRODUCTS
+  // STEP 4–5 — PRODUCTS & ORDER SUMMARY
   // =====================
   if (state.step === 'PRODUCTS') {
     const allowed = state.account.alcohol_license
@@ -459,6 +459,7 @@ if (state.step === 'CONFIRM') {
 
   
 module.exports = { handleMessage };
+
 
 
 
