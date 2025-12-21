@@ -58,14 +58,6 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
-  /* ===== NO STATE FALLBACK ===== */
-  if (!state) {
-    twiml.message('Send "Order" or "Orden" to start.');
-    return twiml.toString();
-  }
-
-  const t = (en, es) => (state.language === 'es' ? es : en);
-
   /* ===== LANGUAGE ===== */
   if (state.current_step === 'LANGUAGE') {
     const language = msg.startsWith('es') ? 'es' : 'en';
