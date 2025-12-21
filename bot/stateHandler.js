@@ -48,21 +48,32 @@ async function handleMessage(from, body, media = {}) {
 
   /* ===== BOT TRIGGER ===== */
   if (!state && (msg === 'order' || msg === 'orden')) {
-    await saveState(whatsapp, {
-      current_step: 'LANGUAGE',
-      language: null,
-      account: {},
-      order: { items: [] },
-      temp: {}
-    });
-    twiml.message('English or Español?');
-    return twiml.toString();
+  await saveState(whatsapp, {
+    current_step: 'LANGUAGE',
+    language: null,
+    account: {},
+    order: { items: [] },
+    temp: {}
+  });
+
+  twiml.message('English or Español?');
+  return twiml.toString();
   }
 
   if (!state) {
     twiml.message('Send "Order" or "Orden" to start.');
     return twiml.toString();
   }
+
+   // Ignore accidental restart words during active flow
+if (state && (msg === 'order' || msg === 'orden')) {
+  twiml.message(
+    state.language === 'es'
+      ? 'Su pedido ya está en progreso.'
+      : 'Your order is already in progress.'
+  );
+  return twiml.toString();
+}
 
   /* ===== LANGUAGE ===== */
   if (state.current_step === 'LANGUAGE') {
