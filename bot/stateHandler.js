@@ -57,10 +57,6 @@ async function handleMessage(from, body, req) {
   const phone = normalize(from);
   const msg = lower(body);
 
-  const numMedia = parseInt(req.body.NumMedia || '0', 10);
-  const mediaUrl = req.body.MediaUrl0;
-  const mediaType = req.body.MediaContentType0;
-
   let state = await getState(phone);
 
   // =====================
@@ -98,7 +94,7 @@ async function handleMessage(from, body, req) {
   // ACCOUNT TYPE
   // =====================
   if (state.step === 'ACCOUNT_TYPE') {
-    const existing = msg.includes('exist') || msg.includes('old');
+    const existing = msg.includes('exist');
     await saveState(phone, {
       ...state,
       step: existing ? 'EXISTING_NAME' : 'NEW_BUSINESS_NAME'
@@ -130,7 +126,7 @@ async function handleMessage(from, body, req) {
   }
 
   // =====================
-  // NEW ACCOUNT
+  // NEW ACCOUNT FLOW
   // =====================
   if (state.step === 'NEW_BUSINESS_NAME') {
     await saveState(phone, {
@@ -156,10 +152,9 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'TAX_QUESTION') {
-    const resale = isYes(msg);
     await saveState(phone, {
       ...state,
-      account: { ...state.account, tax_type: resale ? 'resale' : 'federal' },
+      account: { ...state.account, tax_type: isYes(msg) ? 'resale' : 'federal' },
       step: 'BUSINESS_ADDRESS'
     });
     twiml.message(t(lang, 'Business address?', 'Dirección del negocio?'));
@@ -190,10 +185,9 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'ALCOHOL_QUESTION') {
-    const yes = isYes(msg);
     await saveState(phone, {
       ...state,
-      account: { ...state.account, alcohol_license: yes },
+      account: { ...state.account, alcohol_license: isYes(msg) },
       step: 'SAVE_ACCOUNT'
     });
     twiml.message(t(lang, 'Saving account…', 'Guardando cuenta…'));
@@ -222,99 +216,82 @@ async function handleMessage(from, body, req) {
     });
 
     const p = allowed[0];
-    twiml.message(t(lang,
-      `How many cases of ${p.en}?`,
-      `¿Cuántas cajas de ${p.es}?`
-    ));
+    twiml.message(
+      lang === 'es'
+        ? `${p.es}\n$${p.price.toFixed(2)} por caja (24 unidades)\n\n¿Cuántas cajas desea?`
+        : `${p.en}\n$${p.price.toFixed(2)} per case (24-pack)\n\nHow many cases would you like?`
+    );
     return twiml.toString();
   }
 
+  // =====================
+  // QUANTITY LOOP
+  // =====================
   if (state.step === 'QTY') {
-  const qty = parseInt(msg, 10);
-  if (isNaN(qty) || qty < 0) {
-    twiml.message(t(lang, 'Enter a valid number.', 'Ingrese un número válido.'));
-    return twiml.toString();
-  }
+    const qty = parseInt(msg, 10);
+    if (isNaN(qty) || qty < 0) {
+      twiml.message(t(lang, 'Enter a valid number.', 'Ingrese un número válido.'));
+      return twiml.toString();
+    }
 
-  const { allowed, index, items } = state.order;
-  items.push({ ...allowed[index], qty });
+    const { allowed, index, items } = state.order;
+    items.push({ ...allowed[index], qty });
 
-  // Ask next product
-  if (index + 1 < allowed.length) {
-    state.order.index++;
-    await saveState(phone, state);
+    if (index + 1 < allowed.length) {
+      state.order.index++;
+      await saveState(phone, state);
 
-    const p = allowed[state.order.index];
-    twiml.message(t(lang,
-      `How many cases of ${p.en}?`,
-      `¿Cuántas cajas de ${p.es}?`
-    ));
-    return twiml.toString();
-  }
-
-  // =====================
-  // CALCULATE TOTALS
-  // =====================
-  let subtotal = 0;
-  let totalCases = 0;
-  let summaryLines = [];
-
-  for (const i of items) {
-    if (i.qty > 0) {
-      const lineTotal = i.qty * i.price;
-      subtotal += lineTotal;
-      totalCases += i.qty;
-
-      summaryLines.push(
-        `${lang === 'es' ? i.es : i.en} — ${i.qty} x $${i.price.toFixed(2)} = $${lineTotal.toFixed(2)}`
+      const p = allowed[state.order.index];
+      twiml.message(
+        lang === 'es'
+          ? `${p.es}\n$${p.price.toFixed(2)} por caja (24 unidades)\n\n¿Cuántas cajas desea?`
+          : `${p.en}\n$${p.price.toFixed(2)} per case (24-pack)\n\nHow many cases would you like?`
       );
+      return twiml.toString();
     }
-  }
 
-  if (totalCases < 10) {
-    await resetState(phone);
-    twiml.message(t(lang,
-      'Minimum order is 10 total cases.',
-      'El pedido mínimo es de 10 cajas.'
-    ));
+    // =====================
+    // TOTALS
+    // =====================
+    let subtotal = 0;
+    let totalCases = 0;
+    let summary = [];
+
+    for (const i of items) {
+      if (i.qty > 0) {
+        const line = i.qty * i.price;
+        subtotal += line;
+        totalCases += i.qty;
+        summary.push(`${lang === 'es' ? i.es : i.en} — ${i.qty} x $${i.price.toFixed(2)} = $${line.toFixed(2)}`);
+      }
+    }
+
+    if (totalCases < 10) {
+      await resetState(phone);
+      twiml.message(t(lang, 'Minimum order is 10 cases.', 'El pedido mínimo es 10 cajas.'));
+      return twiml.toString();
+    }
+
+    const taxRate = state.account.tax_type === 'resale' ? 0 : 0.07;
+    const tax = subtotal * taxRate;
+    const total = subtotal + tax;
+
+    await saveState(phone, {
+      ...state,
+      step: 'CONFIRM',
+      order: { items, subtotal, tax, total, totalCases }
+    });
+
+    twiml.message(
+      `🧾 ${t(lang, 'ORDER SUMMARY', 'RESUMEN DEL PEDIDO')}\n\n` +
+      summary.join('\n') +
+      `\n\nSubtotal: $${subtotal.toFixed(2)}` +
+      `\n${taxRate === 0 ? t(lang, 'Tax: EXEMPT', 'Impuesto: EXENTO') : `Tax (7%): $${tax.toFixed(2)}`}` +
+      `\nTotal: $${total.toFixed(2)}\n\n` +
+      t(lang, 'Reply YES to confirm or NO to cancel', 'Responda SÍ para confirmar o NO para cancelar')
+    );
     return twiml.toString();
   }
-
-  const taxRate = state.account.tax_type === 'resale' ? 0 : 0.07;
-  const tax = subtotal * taxRate;
-  const total = subtotal + tax;
-
-  // =====================
-  // SAVE CONFIRM STATE
-  // =====================
-  await saveState(phone, {
-    ...state,
-    step: 'CONFIRM',
-    order: {
-      items,
-      subtotal,
-      tax,
-      total,
-      totalCases
-    }
-  });
-
-  // =====================
-  // SEND ORDER REVIEW
-  // =====================
-  const reviewMessage =
-    `🧾 ${t(lang, 'ORDER SUMMARY', 'RESUMEN DEL PEDIDO')}\n\n` +
-    summaryLines.join('\n') +
-    `\n\nSubtotal: $${subtotal.toFixed(2)}` +
-    `\n${taxRate === 0 ? t(lang, 'Tax: EXEMPT', 'Impuesto: EXENTO') : `Tax (7%): $${tax.toFixed(2)}`}` +
-    `\nTotal: $${total.toFixed(2)}\n\n` +
-    t(lang, 'Reply YES to confirm or NO to cancel',
-              'Responda SÍ para confirmar o NO para cancelar');
-
-  twiml.message(reviewMessage);
-  return twiml.toString();
-}
-
 
   // =====================
   // CONFIRM
@@ -337,8 +314,8 @@ async function handleMessage(from, body, req) {
     await resetState(phone);
 
     twiml.message(t(lang,
-         '✅ Invoice will soon be sent to your email ✓\n A sales representative will contact you to confirm order details.\nThank you for choosing Perga!',
-         '✅ La factura se enviará pronto a su correo electrónico. ✓\nUn representante de ventas se comunicará con usted para confirmar los detalles del pedido.\n¡Gracias por elegir Perga!'
+      '✅ Invoice will be sent to your email.\nA sales representative will contact you.\nThank you for choosing Perga!',
+      '✅ La factura será enviada a su correo.\nUn representante se comunicará con usted.\n¡Gracias por elegir Perga!'
     ));
     return twiml.toString();
   }
@@ -347,6 +324,4 @@ async function handleMessage(from, body, req) {
   return twiml.toString();
 }
 
-// ✅ CORRECT EXPORT
 module.exports = handleMessage;
-
