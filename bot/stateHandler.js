@@ -407,13 +407,14 @@ summaryMessage.push(
   }
 
   twiml.message(t(lang,
-    'Please follow the order process (type ok).',
-    'Por favor siga el proceso (responde ok).'
+    'start order process (type ok).',
+    'Empezar Orden (responde ok).'
   ));
   return twiml.toString();
 }
 
 module.exports = { handleMessage };
+
 
 
 
