@@ -1,23 +1,17 @@
-const supabase = require('./supabase');
-const { v4: uuidv4 } = require('uuid');
+const supabase = require('./supabaseClient');
 
-async function uploadInvoice(buffer) {
-  const filename = `invoice-${uuidv4()}.pdf`;
-
+async function uploadFile(bucket, path, buffer, contentType) {
   const { error } = await supabase.storage
-    .from('invoices')
-    .upload(filename, buffer, {
-      contentType: 'application/pdf',
-      upsert: false
-    });
+    .from(bucket)
+    .upload(path, buffer, { contentType, upsert: true });
 
   if (error) throw error;
 
   const { data } = supabase.storage
-    .from('invoices')
-    .getPublicUrl(filename);
+    .from(bucket)
+    .getPublicUrl(path);
 
   return data.publicUrl;
 }
 
-module.exports = { uploadInvoice };
+module.exports = { uploadFile };
