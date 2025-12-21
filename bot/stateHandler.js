@@ -273,8 +273,8 @@ async function handleMessage(from, body, req) {
 
     const p = allowed[0];
     twiml.message(t(lang,
-      `How many cases for ${p.en}?`,
-      `¿Cuántas cajas para ${p.es}?`
+      `How many cases of ${p.en}?`,
+      `¿Cuántas cajas de ${p.es}?`
     ));
     return twiml.toString();
   }
@@ -297,8 +297,8 @@ async function handleMessage(from, body, req) {
       await saveState(phone, state);
       const p = allowed[state.order.index];
       twiml.message(t(lang,
-        `How many cases for ${p.en}?`,
-        `¿Cuántas cajas para ${p.es}?`
+        `How many cases of ${p.en}?`,
+        `¿Cuántas cajas de ${p.es}?`
       ));
       return twiml.toString();
     }
@@ -363,3 +363,4 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
