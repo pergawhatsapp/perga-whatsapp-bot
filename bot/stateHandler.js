@@ -321,27 +321,49 @@ async function handleMessage(from, body, req) {
     ));
     return twiml.toString();
   }
+  
+/* =========================
+   STEP 6–8 — CONFIRM → INVOICE → RESET
+========================= */
+if (state.step === 'CONFIRM') {
 
-  /* =========================
-     STEP 6–8 — INVOICE + RESET
-  ========================= */
-  if (state.step === 'CONFIRM' && msg.startsWith('y')) {
-    // Invoice + email + WhatsApp PDF happens here
-
-    await resetState(whatsapp);
-
+  if (!msg.startsWith('y')) {
     twiml.message(t(lang,
-      'Invoice sent ✓\nA sales rep will contact you.\nThank you for choosing Perga!',
-      'Factura enviada ✓\nUn representante se comunicará.\n¡Gracias por elegir Perga!'
+      'Order cancelled.',
+      'Pedido cancelado.'
     ));
+    await resetState(whatsapp);
     return twiml.toString();
   }
 
+  // ✅ Generate + send invoice
+  const generateInvoicePDF = require('../services/invoicePdf');
+  const uploadInvoice = require('../services/uploadInvoice');
+  const sendWhatsappPDF = require('../services/sendWhatsappPdf');
+
+  const { filePath, fileName } =
+    generateInvoicePDF(state.order, state.account);
+
+  const pdfUrl = await uploadInvoice(filePath, fileName);
+
+  await sendWhatsappPDF(
+    whatsapp,
+    pdfUrl,
+    state.language
+  );
+
+  // (Email sending would also go here)
+
+  // ✅ Reset ONLY after everything succeeds
+  await resetState(whatsapp);
+
   twiml.message(t(lang,
-    'Please follow the order process.',
-    'Por favor siga el proceso.'
+    'Invoice sent to your email ✓\nA sales representative will contact you to confirm order details.\nThank you for choosing Perga!',
+    'Factura enviada a su correo electrónico ✓\nUn representante de ventas se comunicará con usted para confirmar los detalles del pedido.\n¡Gracias por elegir Perga!'
   ));
+
   return twiml.toString();
 }
+
 
 module.exports = { handleMessage };
