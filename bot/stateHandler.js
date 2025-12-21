@@ -47,18 +47,18 @@ async function handleMessage(from, body) {
   let state = await getState(whatsapp);
 
   /* ===== BOT TRIGGER ===== */
-  if (!state && (msg === 'order' || msg === 'orden')) {
-    await saveState(whatsapp, {
-      current_step: 'LANGUAGE',
-      language: null,
-      account: {},
-      order: { items: [] },
-      temp: {}
-    });
+  if (msg === 'order' || msg === 'orden') {
+  await saveState(whatsapp, {
+    current_step: 'LANGUAGE',
+    language: null,
+    account: {},
+    order: { items: [] },
+    temp: {}
+  });
 
-    twiml.message('English or Español?');
-    return twiml.toString();
-  }
+  twiml.message('English or Español?');
+  return twiml.toString();
+}
 
   if (!state) {
     twiml.message('Send "Order" or "Orden" to start.');
