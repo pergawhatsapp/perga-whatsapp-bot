@@ -340,7 +340,7 @@ async function handleMessage(from, body, req) {
   if (state.step === 'CONFIRM') {
     if (!msg.startsWith('y')) {
       await resetState(phone);
-      twiml.message(t(lang, 'Order cancelled.', 'Pedido cancelado.'));
+      twiml.message(t(lang, 'Invoice sent to your email ✓\nA sales representative will contact you to confirm order details.\nThank you for choosing Perga!', 'Factura enviada a su correo electrónico ✓\nUn representante de ventas se comunicará con usted para confirmar los detalles del pedido.\n¡Gracias por elegir Perga!'));
       return twiml.toString();
     }
 
@@ -363,4 +363,5 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
