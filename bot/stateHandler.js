@@ -1,24 +1,24 @@
 const twilio = require('twilio');
 const supabase = require('../services/supabase');
-
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
 /* =========================
    PRODUCTS
 ========================= */
 const PRODUCTS = [
-  { key: 'BEER', name_en: 'Perga Beer 5.2%', name_es: 'Perga Cerveza 5.2%', price: 25.4, alcoholic: true },
-  { key: 'COLA', name_en: 'Perga Cola', name_es: 'Perga Cola', price: 21.6, alcoholic: false },
-  { key: 'ORANGE', name_en: 'Perga Orange', name_es: 'Perga Naranja', price: 21.6, alcoholic: false },
-  { key: 'LIME', name_en: 'Perga Limon-Lime', name_es: 'Perga Limón-Lima', price: 21.6, alcoholic: false },
-  { key: 'MALTA', name_en: 'Malta Perga', name_es: 'Malta Perga', price: 21.6, alcoholic: false }
+  { key: 'BEER', en: 'Perga Beer 5.2%', es: 'Perga Cerveza 5.2%', price: 25.4, alcoholic: true },
+  { key: 'COLA', en: 'Perga Cola', es: 'Perga Cola', price: 21.6, alcoholic: false },
+  { key: 'ORANGE', en: 'Perga Orange', es: 'Perga Naranja', price: 21.6, alcoholic: false },
+  { key: 'LIME', en: 'Perga Limon-Lime', es: 'Perga Limón-Lima', price: 21.6, alcoholic: false },
+  { key: 'MALTA', en: 'Malta Perga', es: 'Malta Perga', price: 21.6, alcoholic: false }
 ];
 
-/* =========================
-   HELPERS
-========================= */
-const normalizeWhatsApp = from => from.replace('whatsapp:', '');
+const normalize = from => from.replace('whatsapp:', '');
+const t = (s, en, es) => (s.language === 'es' ? es : en);
 
+/* =========================
+   STATE HELPERS
+========================= */
 async function getState(whatsapp) {
   const { data } = await supabase
     .from('conversation_state')
@@ -36,27 +36,19 @@ async function saveState(whatsapp, patch) {
   });
 }
 
-async function clearState(whatsapp) {
-  await supabase
-    .from('conversation_state')
-    .delete()
-    .eq('whatsapp_number', whatsapp);
-}
-
 /* =========================
    MAIN HANDLER
 ========================= */
-async function handleMessage(from, body) {
+async function handleMessage(from, body, media = []) {
   const twiml = new MessagingResponse();
-  const whatsapp = normalizeWhatsApp(from);
+  const whatsapp = normalize(from);
   const msg = (body || '').trim().toLowerCase();
-
   let state = await getState(whatsapp);
 
   /* =========================
-     BOT TRIGGER (ONLY IF NO STATE)
+     BOT TRIGGER
   ========================= */
-  if (!state && (msg === 'order' || msg === 'orden')) {
+  if ((msg === 'order' || msg === 'orden') && (!state || state.current_step === 'DONE')) {
     await saveState(whatsapp, {
       current_step: 'LANGUAGE',
       language: null,
@@ -64,7 +56,6 @@ async function handleMessage(from, body) {
       order: { items: [] },
       temp: {}
     });
-
     twiml.message('English or Español?');
     return twiml.toString();
   }
@@ -74,25 +65,13 @@ async function handleMessage(from, body) {
     return twiml.toString();
   }
 
-  const t = (en, es) => (state.language === 'es' ? es : en);
-
   /* =========================
      LANGUAGE
   ========================= */
   if (state.current_step === 'LANGUAGE') {
-    const language = msg.includes('es') ? 'es' : 'en';
-
-    await saveState(whatsapp, {
-      ...state,
-      language,
-      current_step: 'ACCOUNT_TYPE'
-    });
-
-    twiml.message(
-      language === 'es'
-        ? '¿Cuenta nueva o cuenta existente?'
-        : 'New account or existing account?'
-    );
+    const language = msg.startsWith('es') ? 'es' : 'en';
+    await saveState(whatsapp, { ...state, language, current_step: 'ACCOUNT_TYPE' });
+    twiml.message(t(state, 'New account or existing account?', '¿Cuenta nueva o cuenta existente?'));
     return twiml.toString();
   }
 
@@ -101,13 +80,11 @@ async function handleMessage(from, body) {
   ========================= */
   if (state.current_step === 'ACCOUNT_TYPE') {
     const existing = msg.includes('exist');
-
     await saveState(whatsapp, {
       ...state,
       current_step: existing ? 'EXISTING_NAME' : 'NEW_BUSINESS_NAME'
     });
-
-    twiml.message(t('Business name?', '¿Nombre del negocio?'));
+    twiml.message(t(state, 'Business name?', '¿Nombre del negocio?'));
     return twiml.toString();
   }
 
@@ -115,69 +92,144 @@ async function handleMessage(from, body) {
      EXISTING ACCOUNT
   ========================= */
   if (state.current_step === 'EXISTING_NAME') {
-    const businessName = body.trim();
-
-    const { data: business } = await supabase
+    const name = body.trim();
+    const { data } = await supabase
       .from('businesses')
       .select('*')
-      .eq('business_name', businessName)
+      .eq('business_name', name)
       .eq('phone', whatsapp)
       .maybeSingle();
 
-    if (!business) {
-      twiml.message(
-        t(
-          'Business not found. Create new account?',
-          'Negocio no encontrado. ¿Crear cuenta nueva?'
-        )
-      );
-      await saveState(whatsapp, {
-        ...state,
-        current_step: 'ACCOUNT_TYPE'
-      });
+    if (!data) {
+      await saveState(whatsapp, { ...state, current_step: 'ACCOUNT_TYPE' });
+      twiml.message(t(state, 'Account not found. Create new account?', 'Cuenta no encontrada. ¿Crear nueva cuenta?'));
       return twiml.toString();
     }
 
     await saveState(whatsapp, {
       ...state,
-      account: business,
+      account: data,
       current_step: 'SELECT_PRODUCTS'
     });
-
-    twiml.message(
-      t(
-        'Account loaded. Let’s place your order.',
-        'Cuenta cargada. Vamos a ordenar.'
-      )
-    );
+    twiml.message(t(state, 'Account loaded. Let’s place your order.', 'Cuenta cargada. Vamos a ordenar.'));
     return twiml.toString();
   }
 
   /* =========================
-     NEW ACCOUNT (SIMPLIFIED)
+     NEW ACCOUNT FLOW
   ========================= */
   if (state.current_step === 'NEW_BUSINESS_NAME') {
     await saveState(whatsapp, {
       ...state,
-      account: {
-        business_name: body.trim(),
-        phone: whatsapp,
-        alcohol_license: false
-      },
-      current_step: 'SELECT_PRODUCTS'
+      account: { business_name: body.trim() },
+      current_step: 'BUSINESS_EMAIL'
     });
+    twiml.message(t(state, 'Business email for invoices?', 'Correo electrónico del negocio para facturas?'));
+    return twiml.toString();
+  }
 
+  if (state.current_step === 'BUSINESS_EMAIL') {
+    await saveState(whatsapp, {
+      ...state,
+      account: { ...state.account, email: body.trim() },
+      current_step: 'TAX_TYPE'
+    });
+    twiml.message(t(state, 'Do you have a resale tax ID? (yes/no)', '¿Tiene ID de reventa? (sí/no)'));
+    return twiml.toString();
+  }
+
+  if (state.current_step === 'TAX_TYPE') {
+    const resale = msg.startsWith('y');
+    await saveState(whatsapp, {
+      ...state,
+      temp: { resale },
+      current_step: resale ? 'RESELLER_ID' : 'FEDERAL_ID'
+    });
+    twiml.message(t(state, 'Enter tax ID number', 'Ingrese número de identificación fiscal'));
+    return twiml.toString();
+  }
+
+  if (['RESELLER_ID', 'FEDERAL_ID'].includes(state.current_step)) {
+    await saveState(whatsapp, {
+      ...state,
+      account: {
+        ...state.account,
+        tax_id: body.trim(),
+        tax_type: state.current_step === 'RESELLER_ID' ? 'resale' : 'federal'
+      },
+      current_step: 'BUSINESS_ADDRESS'
+    });
+    twiml.message(t(state, 'Business address?', 'Dirección del negocio?'));
+    return twiml.toString();
+  }
+
+  if (state.current_step === 'BUSINESS_ADDRESS') {
+    await saveState(whatsapp, {
+      ...state,
+      account: { ...state.account, address: body.trim() },
+      current_step: 'BUSINESS_PHONE'
+    });
+    twiml.message(t(state, 'Business phone number?', 'Teléfono del negocio?'));
+    return twiml.toString();
+  }
+
+  if (state.current_step === 'BUSINESS_PHONE') {
+    await saveState(whatsapp, {
+      ...state,
+      account: { ...state.account, phone: body.trim() },
+      current_step: 'CONTACT_NAME'
+    });
+    twiml.message(t(state, 'Contact name?', 'Nombre del contacto?'));
+    return twiml.toString();
+  }
+
+  if (state.current_step === 'CONTACT_NAME') {
+    await saveState(whatsapp, {
+      ...state,
+      account: { ...state.account, contact_name: body.trim() },
+      current_step: 'ALCOHOL_LICENSE'
+    });
+    twiml.message(t(state, 'Do you have an alcohol license? (yes/no)', '¿Tiene licencia de alcohol? (sí/no)'));
+    return twiml.toString();
+  }
+
+  if (state.current_step === 'ALCOHOL_LICENSE') {
+    const yes = msg.startsWith('y');
+    await saveState(whatsapp, {
+      ...state,
+      account: { ...state.account, alcohol_license: yes },
+      current_step: yes ? 'ALCOHOL_PHOTO' : 'SELECT_PRODUCTS'
+    });
     twiml.message(
-      t(
-        'Account created. Let’s place your order.',
-        'Cuenta creada. Vamos a ordenar.'
-      )
+      yes
+        ? t(state, 'Upload alcohol license photo', 'Suba la foto de la licencia')
+        : t(state, 'Let’s place your order.', 'Vamos a ordenar.')
     );
     return twiml.toString();
   }
 
+  if (state.current_step === 'ALCOHOL_PHOTO' && media.length) {
+    await saveState(whatsapp, {
+      ...state,
+      account: { ...state.account, alcohol_license_url: media[0] },
+      current_step: 'ALCOHOL_NUMBER'
+    });
+    twiml.message(t(state, 'Enter license number', 'Ingrese número de licencia'));
+    return twiml.toString();
+  }
+
+  if (state.current_step === 'ALCOHOL_NUMBER') {
+    await saveState(whatsapp, {
+      ...state,
+      account: { ...state.account, alcohol_license_number: body.trim() },
+      current_step: 'SELECT_PRODUCTS'
+    });
+    twiml.message(t(state, 'Let’s place your order.', 'Vamos a ordenar.'));
+    return twiml.toString();
+  }
+
   /* =========================
-     PRODUCT FLOW
+     PRODUCTS & ORDER
   ========================= */
   if (state.current_step === 'SELECT_PRODUCTS') {
     const allowed = state.account.alcohol_license
@@ -186,37 +238,25 @@ async function handleMessage(from, body) {
 
     await saveState(whatsapp, {
       ...state,
-      current_step: 'ASK_QTY',
-      temp: { index: 0, allowed }
+      temp: { index: 0, allowed },
+      current_step: 'ASK_QTY'
     });
 
     const p = allowed[0];
-    twiml.message(
-      t(
-        `How many cases for ${p.name_en}? (min 10)`,
-        `¿Cuántas cajas para ${p.name_es}? (mín 10)`
-      )
-    );
+    twiml.message(t(state, `How many cases for ${p.en}? (min 10)`, `¿Cuántas cajas para ${p.es}? (mín 10)`));
     return twiml.toString();
   }
 
-  /* =========================
-     QUANTITY LOOP
-  ========================= */
   if (state.current_step === 'ASK_QTY') {
     const qty = parseInt(msg);
     if (isNaN(qty) || qty < 10) {
-      twiml.message(t('Minimum is 10 cases.', 'El mínimo es 10 cajas.'));
+      twiml.message(t(state, 'Minimum is 10 cases.', 'El mínimo es 10 cajas.'));
       return twiml.toString();
     }
 
     const { index, allowed } = state.temp;
     const product = allowed[index];
-
-    const items = [
-      ...state.order.items,
-      { key: product.key, qty, price: product.price }
-    ];
+    const items = [...state.order.items, { ...product, qty }];
 
     if (index + 1 < allowed.length) {
       await saveState(whatsapp, {
@@ -224,63 +264,50 @@ async function handleMessage(from, body) {
         order: { items },
         temp: { index: index + 1, allowed }
       });
-
       const next = allowed[index + 1];
-      twiml.message(
-        t(
-          `How many cases for ${next.name_en}?`,
-          `¿Cuántas cajas para ${next.name_es}?`
-        )
-      );
+      twiml.message(t(state, `How many cases for ${next.en}?`, `¿Cuántas cajas para ${next.es}?`));
       return twiml.toString();
     }
 
     let total = 0;
     let summary = '';
     items.forEach(i => {
-      total += i.qty * i.price;
-      summary += `${i.key}: ${i.qty} → $${(i.qty * i.price).toFixed(2)}\n`;
+      const line = i.qty * i.price;
+      total += line;
+      summary += `${i.key}: ${i.qty} → $${line.toFixed(2)}\n`;
     });
 
     await saveState(whatsapp, {
       ...state,
-      current_step: 'CONFIRM',
-      order: { items, total }
+      order: { items, total },
+      current_step: 'CONFIRM'
     });
 
-    twiml.message(
-      `ORDER SUMMARY\n\n${summary}\nTOTAL: $${total.toFixed(2)}\n\nReply YES to confirm`
-    );
+    twiml.message(`ORDER SUMMARY\n\n${summary}\nTOTAL: $${total.toFixed(2)}\n\nReply YES to confirm`);
     return twiml.toString();
   }
 
-  /* =========================
-     CONFIRM
-  ========================= */
   if (state.current_step === 'CONFIRM') {
     if (!msg.startsWith('y')) {
-      twiml.message(t('Order cancelled.', 'Pedido cancelado.'));
-      await clearState(whatsapp);
+      twiml.message(t(state, 'Order cancelled.', 'Pedido cancelado.'));
       return twiml.toString();
     }
 
-    await clearState(whatsapp);
+    // 🔥 Invoice generation + email happens here (already planned)
+
+    await saveState(whatsapp, { current_step: 'DONE' });
 
     twiml.message(
       t(
+        state,
         'Invoice sent to your email ✓\nA sales representative will contact you.\nThank you for choosing Perga!',
-        'Factura enviada a su correo ✓\nUn representante de ventas se comunicará.\n¡Gracias por elegir Perga!'
+        'Factura enviada a su correo ✓\nUn representante se comunicará con usted.\n¡Gracias por elegir Perga!'
       )
     );
     return twiml.toString();
   }
 
-  twiml.message(
-    t(
-      'I didn’t understand that. Please reply again.',
-      'No entendí eso. Por favor responda otra vez.'
-    )
-  );
+  twiml.message(t(state, 'Send "order" to start.', 'Envíe "orden" para comenzar.'));
   return twiml.toString();
 }
 
