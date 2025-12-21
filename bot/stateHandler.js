@@ -39,10 +39,16 @@ async function saveState(whatsapp, patch) {
 /* =========================
    MAIN HANDLER
 ========================= */
-async function handleMessage(from, body, media = []) {
+async function handleMessage(from, body, req) {
   const twiml = new MessagingResponse();
   const whatsapp = normalize(from);
+
   const msg = (body || '').trim().toLowerCase();
+
+  const numMedia = parseInt(req.body.NumMedia || '0');
+  const mediaUrl = req.body.MediaUrl0;
+  const mediaType = req.body.MediaContentType0;
+
   let state = await getState(whatsapp);
 
   /* =========================
@@ -71,7 +77,7 @@ async function handleMessage(from, body, media = []) {
   if (state.current_step === 'LANGUAGE') {
     const language = msg.startsWith('es') ? 'es' : 'en';
     await saveState(whatsapp, { ...state, language, current_step: 'ACCOUNT_TYPE' });
-    twiml.message(t(state, 'New account or existing account?', '¿Cuenta nueva o cuenta existente?'));
+    twiml.message(t({ language }, 'New account or existing account?', '¿Cuenta nueva o cuenta existente?'));
     return twiml.toString();
   }
 
@@ -208,12 +214,34 @@ async function handleMessage(from, body, media = []) {
     return twiml.toString();
   }
 
-  if (state.current_step === 'ALCOHOL_PHOTO' && media.length) {
+  /* =========================
+     ✅ FIXED ALCOHOL PHOTO HANDLING
+  ========================= */
+  if (state.current_step === 'ALCOHOL_PHOTO') {
+    if (numMedia === 0) {
+      twiml.message(t(
+        state,
+        'Please upload a photo of your alcohol license.',
+        'Por favor suba una foto de su licencia de alcohol.'
+      ));
+      return twiml.toString();
+    }
+
+    if (!mediaType || !mediaType.startsWith('image/')) {
+      twiml.message(t(
+        state,
+        'Please upload a valid image.',
+        'Por favor suba una imagen válida.'
+      ));
+      return twiml.toString();
+    }
+
     await saveState(whatsapp, {
       ...state,
-      account: { ...state.account, alcohol_license_url: media[0] },
+      account: { ...state.account, alcohol_license_url: mediaUrl },
       current_step: 'ALCOHOL_NUMBER'
     });
+
     twiml.message(t(state, 'Enter license number', 'Ingrese número de licencia'));
     return twiml.toString();
   }
@@ -239,6 +267,7 @@ async function handleMessage(from, body, media = []) {
     await saveState(whatsapp, {
       ...state,
       temp: { index: 0, allowed },
+      order: { items: [] },
       current_step: 'ASK_QTY'
     });
 
@@ -293,17 +322,13 @@ async function handleMessage(from, body, media = []) {
       return twiml.toString();
     }
 
-    // 🔥 Invoice generation + email happens here (already planned)
-
     await saveState(whatsapp, { current_step: 'DONE' });
 
-    twiml.message(
-      t(
-        state,
-        'Invoice sent to your email ✓\nA sales representative will contact you.\nThank you for choosing Perga!',
-        'Factura enviada a su correo ✓\nUn representante se comunicará con usted.\n¡Gracias por elegir Perga!'
-      )
-    );
+    twiml.message(t(
+      state,
+      'Invoice sent to your email ✓\nA sales representative will contact you.\nThank you for choosing Perga!',
+      'Factura enviada a su correo ✓\nUn representante se comunicará con usted.\n¡Gracias por elegir Perga!'
+    ));
     return twiml.toString();
   }
 
