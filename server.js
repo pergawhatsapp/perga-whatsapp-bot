@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
-const { handleMessage } = require('./bot/stateHandler');
+const handleMessage = require('./bot/stateHandler');
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
