@@ -1,16 +1,30 @@
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
+const nodemailer = require('nodemailer');
+const fs = require('fs');
 
-async function sendInvoiceEmail(to, pdfBuffer) {
-  await resend.emails.send({
-    from: process.env.EMAIL_FROM,
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
+
+async function sendInvoiceEmail({ to, subject, text, pdfPath }) {
+  if (!fs.existsSync(pdfPath)) {
+    throw new Error('PDF not found for email');
+  }
+
+  await transporter.sendMail({
+    from: `"Perga Beverages" <${process.env.COMPANY_EMAIL}>`,
     to,
-    subject: 'Perga Invoice',
-    html: '<p>Your invoice is attached.</p>',
+    subject,
+    text,
     attachments: [
       {
         filename: 'invoice.pdf',
-        content: pdfBuffer.toString('base64')
+        path: pdfPath
       }
     ]
   });
