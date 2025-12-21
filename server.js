@@ -20,6 +20,5 @@ app.listen(process.env.PORT, () => {
 });
 
 const path = require('path');
-
 app.use('/tmp', express.static(path.join(__dirname, 'tmp')));
-});
+
