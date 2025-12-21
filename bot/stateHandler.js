@@ -139,11 +139,17 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'BUSINESS_EMAIL') {
+    if (!body.includes('@')) {
+      twiml.message(t(lang, 'Enter a valid email.', 'Ingrese un correo válido.'));
+      return twiml.toString();
+    }
+
     await saveState(phone, {
       ...state,
       account: { ...state.account, email: body.trim() },
       step: 'TAX_QUESTION'
     });
+
     twiml.message(t(lang,
       'Do you have a resale tax ID? (yes/no)',
       '¿Tiene tax ID de reventa? (sí/no)'
@@ -152,12 +158,24 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'TAX_QUESTION') {
+    const resale = isYes(msg);
     await saveState(phone, {
       ...state,
-      account: { ...state.account, tax_type: isYes(msg) ? 'resale' : 'federal' },
+      account: { ...state.account, tax_type: resale ? 'resale' : 'federal' },
+      step: 'TAX_NUMBER'
+    });
+
+    twiml.message(t(lang, 'Enter federal tax ID number', 'Ingrese federal tax ID (sunbiz) EX 12-3456789'));
+    return twiml.toString();
+  }
+
+  if (state.step === 'TAX_NUMBER') {
+    await saveState(phone, {
+      ...state,
+      account: { ...state.account, tax_id: body.trim() },
       step: 'BUSINESS_ADDRESS'
     });
-    twiml.message(t(lang, 'Business address?', 'Dirección del negocio?'));
+    twiml.message(t(lang, 'Business address? EX 1234 NW 56th St, Miami FL,33123', 'Dirección del negocio? EX 1234 NW 56th St, Miami FL,33123'));
     return twiml.toString();
   }
 
@@ -185,9 +203,40 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'ALCOHOL_QUESTION') {
+    const yes = isYes(msg);
     await saveState(phone, {
       ...state,
-      account: { ...state.account, alcohol_license: isYes(msg) },
+      account: { ...state.account, alcohol_license: yes },
+      step: yes ? 'ALCOHOL_PHOTO' : 'SAVE_ACCOUNT'
+    });
+
+    twiml.message(yes
+      ? t(lang, 'Upload license photo', 'Suba la licencia')
+      : t(lang, 'Saving account… (type ok)', 'Guardando cuenta… (ok)')
+    );
+    return twiml.toString();
+  }
+
+  if (state.step === 'ALCOHOL_PHOTO') {
+    if (!mediaType?.startsWith('image/')) {
+      twiml.message(t(lang, 'Upload a photo.', 'Suba una imagen.'));
+      return twiml.toString();
+    }
+
+    await saveState(phone, {
+      ...state,
+      account: { ...state.account, alcohol_license_url: mediaUrl },
+      step: 'ALCOHOL_NUMBER'
+    });
+
+    twiml.message(t(lang, 'License number?', 'Número de licencia?'));
+    return twiml.toString();
+  }
+
+  if (state.step === 'ALCOHOL_NUMBER') {
+    await saveState(phone, {
+      ...state,
+      account: { ...state.account, alcohol_license_number: body.trim() },
       step: 'SAVE_ACCOUNT'
     });
     twiml.message(t(lang, 'Saving account…', 'Guardando cuenta…'));
@@ -197,10 +246,9 @@ async function handleMessage(from, body, req) {
   if (state.step === 'SAVE_ACCOUNT') {
     await supabase.from('businesses').upsert(state.account);
     await saveState(phone, { ...state, step: 'PRODUCTS' });
-    twiml.message(t(lang, 'Account saved. Let’s order.', 'Cuenta guardada.'));
+    twiml.message(t(lang, 'Account saved.', 'Cuenta guardada.'));
     return twiml.toString();
   }
-
   // =====================
   // PRODUCTS
   // =====================
@@ -325,4 +373,5 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
