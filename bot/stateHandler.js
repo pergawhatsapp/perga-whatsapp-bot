@@ -75,7 +75,6 @@ async function handleMessage(from, body, req) {
       twiml.message('English or Español?');
       return twiml.toString();
     }
-
     twiml.message('Send "order" or "orden" to start.');
     return twiml.toString();
   }
@@ -128,12 +127,7 @@ async function handleMessage(from, body, req) {
       return twiml.toString();
     }
 
-    await saveState(phone, {
-      ...state,
-      account: data,
-      step: 'PRODUCTS'
-    });
-
+    await saveState(phone, { ...state, account: data, step: 'PRODUCTS' });
     twiml.message(t(lang,
       'Account loaded. Let’s place your order.',
       'Cuenta cargada. Vamos a ordenar.'
@@ -162,7 +156,7 @@ async function handleMessage(from, body, req) {
     });
     twiml.message(t(lang,
       'Do you have a resale tax ID? (yes/no)',
-      '¿Tiene ID de reventa? (sí/no)'
+      '¿Tiene ID de reventa (resale tax ID)? ( (sí/no)'
     ));
     return twiml.toString();
   }
@@ -176,7 +170,7 @@ async function handleMessage(from, body, req) {
     });
     twiml.message(t(lang,
       'Enter tax ID number',
-      'Ingrese número de identificación fiscal'
+      'Ingrese número de identificación federal tax id (sunbiz)'
     ));
     return twiml.toString();
   }
@@ -223,7 +217,7 @@ async function handleMessage(from, body, req) {
     });
     twiml.message(yes
       ? t(lang, 'Upload alcohol license photo', 'Suba la foto de la licencia')
-      : t(lang, 'Saving account…', 'Guardando cuenta…')
+      : t(lang, 'Saving account… (type ok)', 'Guardando cuenta… (responde ok)')
     );
     return twiml.toString();
   }
@@ -287,16 +281,16 @@ async function handleMessage(from, body, req) {
 
   if (state.step === 'QTY') {
     const qty = parseInt(msg);
-    if (isNaN(qty) || qty < 10) {
+    if (isNaN(qty) || qty < 0) {
       twiml.message(t(lang,
-        'Minimum is 10 cases.',
-        'El mínimo es 10 cajas.'
+        'Enter a valid number of cases.',
+        'Ingrese un número válido de cajas.'
       ));
       return twiml.toString();
     }
 
-    const { allowed, index } = state.order;
-    state.order.items.push({ ...allowed[index], qty });
+    const { allowed, index, items } = state.order;
+    items.push({ ...allowed[index], qty });
 
     if (index + 1 < allowed.length) {
       state.order.index++;
@@ -309,15 +303,33 @@ async function handleMessage(from, body, req) {
       return twiml.toString();
     }
 
-    let total = 0;
-    state.order.items.forEach(i => total += i.qty * i.price);
-    state.order.total = total;
+    // ===== SUMMARY + MIN 10 TOTAL CASES =====
+    let totalCases = 0;
+    let subtotal = 0;
+    let lines = [];
 
-    await saveState(phone, { ...state, step: 'CONFIRM' });
+    for (const item of items) {
+      if (item.qty > 0) {
+        totalCases += item.qty;
+        const lineTotal = item.qty * item.price;
+        subtotal += lineTotal;
+        lines.push(`${item.en} – ${item.qty} × $${item.price.toFixed(2)} = $${lineTotal.toFixed(2)}`);
+      }
+    }
+
+    if (totalCases < 10) {
+      twiml.message(t(lang,
+        'Minimum order is 10 total cases. Please adjust quantities.',
+        'El pedido mínimo es de 10 cajas en total.'
+      ));
+      return twiml.toString();
+    }
+
+    await saveState(phone, { ...state, step: 'CONFIRM', order: { ...state.order, subtotal } });
 
     twiml.message(t(lang,
-      `Order total: $${total.toFixed(2)}\nReply YES to confirm`,
-      `Total del pedido: $${total.toFixed(2)}\nResponda SÍ para confirmar`
+      `Order Summary:\n${lines.join('\n')}\n\nSubtotal: $${subtotal.toFixed(2)}\nReply YES to confirm`,
+      `Resumen del pedido:\n${lines.join('\n')}\n\nSubtotal: $${subtotal.toFixed(2)}\nResponda SÍ para confirmar`
     ));
     return twiml.toString();
   }
@@ -332,7 +344,7 @@ async function handleMessage(from, body, req) {
       return twiml.toString();
     }
 
-    // 👉 Invoice generation + WhatsApp + Email goes here
+    // 👉 invoice + WhatsApp + email handled elsewhere
 
     await resetState(phone);
 
@@ -344,8 +356,8 @@ async function handleMessage(from, body, req) {
   }
 
   twiml.message(t(lang,
-    'Please follow the order process.',
-    'Por favor siga el proceso.'
+    'Please follow the order process (type ok).',
+    'Por favor siga el proceso (responde ok).'
   ));
   return twiml.toString();
 }
