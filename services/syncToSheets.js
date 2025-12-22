@@ -28,4 +28,58 @@ async function appendRow(sheetName, values) {
       values: [values]
     }
   });
+
+  supabase
+  .channel('business_case_summary_listener')
+  .on(
+    'postgres_changes',
+    {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'business_case_summary'
+    },
+    payload => {
+      console.log('🟢 NEW BUSINESS CASE SUMMARY');
+      console.log(payload.new);
+    }
+  )
+  .subscribe();
+
+  supabase
+  .channel('orders')
+  .on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'orders' },
+    payload => {
+      const o = payload.new;
+      appendRow('orders', [
+        o.id,
+        o.business_name,
+        o.total_cases,
+        o.tax,
+        o.total,
+        o.created_at
+      ]);
+    }
+  )
+  .subscribe();
+supabase
+  .channel('businesses')
+  .on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'businesses' },
+    payload => {
+      const b = payload.new;
+      appendRow('businesses', [
+        b.id,
+        b.business_name,
+        b.email,
+        b.phone,
+        b.address,
+        b.created_at
+      ]);
+    }
+  )
+  .subscribe();
+  
 }
