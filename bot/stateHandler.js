@@ -367,15 +367,43 @@ async function handleMessage(from, body, req) {
       return twiml.toString();
     }
 
-    const { error } = await supabase.from('orders').insert({
-  phone,
-  business_name: state.account.business_name,
-  items: state.order.items,
-  tax: state.order.tax,
-  total: state.order.total,
-  total_cases: state.order.totalCases, // 🔥 FIX
-  created_at: new Date()
-});
+    // 1️⃣ Insert order and get order ID
+const { data: order, error } = await supabase
+  .from('orders')
+  .insert({
+    phone,
+    business_name: state.account.business_name,
+    tax: state.order.tax,
+    total: state.order.total,
+    total_cases: state.order.totalCases,
+    created_at: new Date()
+  })
+  .select()
+  .single();
+
+if (error) {
+  console.error('ORDER INSERT ERROR:', error);
+}
+
+// 2️⃣ Insert order items (cases per flavor)
+const orderItems = state.order.items
+  .filter(i => i.qty > 0)
+  .map(i => ({
+    order_id: order.id,        // 🔑 LINK TO ORDER
+    product_key: i.key,        // BEER / COLA / ORANGE
+    product_name: i.en,        // Perga Cola
+    qty: i.qty,                // CASES
+    units: i.qty * 24,         // 24-pack per case
+    price: i.price             // price per case
+  }));
+
+const { error: itemsError } = await supabase
+  .from('order_items')
+  .insert(orderItems);
+
+if (itemsError) {
+  console.error('ORDER ITEMS INSERT ERROR:', itemsError);
+}
 
 if (error) {
   console.error('ORDER INSERT ERROR:', error);
@@ -395,6 +423,7 @@ if (error) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
