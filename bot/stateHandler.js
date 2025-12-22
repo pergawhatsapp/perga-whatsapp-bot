@@ -281,6 +281,7 @@ async function handleMessage(from, body, req) {
 
     twiml.message(t(lang, 'Saving account… Type OK', 'Guardando cuenta… Escriba OK'));
     return twiml.toString();
+  }
 
   if (state.step === 'SAVE_ACCOUNT') {
     await supabase.from('businesses').upsert(state.account);
@@ -444,5 +445,6 @@ if (error || !order) {
 }
 
 module.exports = { handleMessage };
+
 
 
