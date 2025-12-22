@@ -236,7 +236,7 @@ async function handleMessage(from, body, req) {
 
     twiml.message(yes
       ? t(lang, 'Upload license photo', 'Suba la foto de la licencia de alcohol')
-      : t(lang, 'Saving account… (type ok)', 'Guardando cuenta… (ok)')
+      : t(lang, 'Saving account… (type ok)', 'Guardando cuenta… (escribe ok)')
     );
     return twiml.toString();
   }
@@ -423,6 +423,7 @@ if (error) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
