@@ -340,16 +340,16 @@ async function handleMessage(from, body, req) {
     let totalCases = 0;
     let summary = [];
 
-    for (const i of items) {
-      if (i.qty > 0) {
-        const line = i.qty * i.price;
-        subtotal += line;
-        totalCases += i.qty;
-        summary.push(
-          `${lang === 'es' ? i.es : i.en} — ${i.qty} x $${i.price.toFixed(2)} = $${line.toFixed(2)}`
-        );
-      }
-    }
+  for (const i of items) {
+   if (i.qty > 0) {
+    const line = i.qty * i.price;
+    subtotal += line;
+    totalCases += i.qty;
+    summary.push(
+      `${lang === 'es' ? i.es : i.en} — ${i.qty} x $${i.price.toFixed(2)} = $${line.toFixed(2)}`
+    );
+  }
+}
 
     if (totalCases < 10) {
       await resetState(phone);
@@ -443,4 +443,5 @@ if (error || !order) {
 }
 
 module.exports = { handleMessage };
+
 
