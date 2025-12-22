@@ -382,62 +382,77 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'CONFIRM') {
-    if (!isYes(msg)) {
-      await resetState(phone);
-      twiml.message(t(lang, 'Order cancelled.', 'Pedido cancelado.'));
-      return twiml.toString();
-    }
+  if (!isYes(msg)) {
+    await resetState(phone);
+    twiml.message(t(lang, 'Order cancelled.', 'Pedido cancelado.'));
+    return twiml.toString();
+  }
 
-    const { data: order, error } = await supabase
-  .from('orders')
-  .insert({
-    phone,
-    business_name: state.account.business_name,
-    items: state.order.items, // ✅ REQUIRED FIX
-    tax: state.order.tax,
-    total: state.order.total,
-    total_cases: state.order.totalCases,
-    created_at: new Date()
-  })
-  .select()
-  .single();
+  const { data: order, error } = await supabase
+    .from('orders')
+    .insert({
+      phone,
+      business_name: state.account.business_name,
+      items: state.order.items,
+      tax: state.order.tax,
+      total: state.order.total,
+      total_cases: state.order.totalCases,
+      created_at: new Date()
+    })
+    .select()
+    .single();
 
-if (error || !order) {
-  console.error('ORDER INSERT ERROR:', error);
-  twiml.message(t(lang,
-    'There was an error saving your order. Please try again.',
-    'Hubo un error guardando su pedido. Intente nuevamente.'
+  if (error || !order) {
+    console.error('ORDER INSERT ERROR:', error);
+    twiml.message(t(lang,
+      'There was an error saving your order. Please try again.',
+      'Hubo un error guardando su pedido. Intente nuevamente.'
     ));
-  
-  return twiml.toString();
-}
-  
-    const orderItems = state.order.items
-      .filter(i => i.qty > 0)
-      .map(i => ({
-        order_id: order.id,
-        product_key: i.key,
-        product_name: i.en,
-        qty: i.qty,
-        units: i.qty * 24,
-        price: i.price
+    return twiml.toString();
+  }
+
+  const orderItems = state.order.items
+    .filter(i => i.qty > 0)
+    .map(i => ({
+      order_id: order.id,
+      product_key: i.key,
+      product_name: i.en,
+      qty: i.qty,
+      units: i.qty * 24,
+      price: i.price
     }));
 
-    const { error: itemsError } = await supabase
-      .from('order_items')
-      .insert(orderItems);
+  const { error: itemsError } = await supabase
+    .from('order_items')
+    .insert(orderItems);
 
-    if (itemsError) console.error('ORDER ITEMS INSERT ERROR:', itemsError);
+  if (itemsError) {
+    console.error('ORDER ITEMS INSERT ERROR:', itemsError);
+  }
 
-    await resetState(phone);
+  // ✅ NEW: Sync to Google Sheets after order_items are inserted
+  try {
+    const { data: syncResult, error: syncError } = await supabase
+      .rpc('sync_order_to_sheets', { order_id_param: order.id });
+    
+    if (syncError) {
+      console.error('GOOGLE SHEETS SYNC ERROR:', syncError);
+    } else {
+      console.log('✅ Google Sheets sync successful:', syncResult);
+    }
+  } catch (syncErr) {
+    console.error('GOOGLE SHEETS SYNC EXCEPTION:', syncErr);
+  }
 
-    twiml.message(
-      t(lang,
-        '✅ Invoice will be sent to your email.\nA sales representative will contact you.\nThank you for choosing Perga!',
-        '✅ La factura será enviada a su correo.\nUn representante se comunicará con usted.\n¡Gracias por elegir Perga!'
-      )
-    );
-    return twiml.toString();
+  await resetState(phone);
+
+  twiml.message(
+    t(lang,
+      '✅ Invoice will be sent to your email.\nA sales representative will contact you.\nThank you for choosing Perga!',
+      '✅ La factura será enviada a su correo.\nUn representante se comunicará con usted.\n¡Gracias por elegir Perga!'
+    )
+  );
+  return twiml.toString();
   }
 
   twiml.message('Send "order" to start again., Escribe "orden" para iniciar un nuevo pedido.');
@@ -445,6 +460,7 @@ if (error || !order) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
