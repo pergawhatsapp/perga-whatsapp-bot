@@ -367,24 +367,19 @@ async function handleMessage(from, body, req) {
       return twiml.toString();
     }
 
-    await supabase.from('orders').insert({
+    const { error } = await supabase.from('orders').insert({
   phone,
   business_name: state.account.business_name,
-  items: state.order.items.map(i => ({
-    key: i.key,
-    name: lang === 'es' ? i.es : i.en,
-    qty: i.qty,
-    cases: i.qty,
-    units_per_case: 24,
-    price: i.price,
-    line_total: i.qty * i.price
-  })),
-  subtotal: state.order.subtotal,
+  items: state.order.items,
   tax: state.order.tax,
   total: state.order.total,
-  total_cases: state.order.totalCases,
+  total_cases: state.order.totalCases, // 🔥 FIX
   created_at: new Date()
-    });
+});
+
+if (error) {
+  console.error('ORDER INSERT ERROR:', error);
+}
 
     await resetState(phone);
 
@@ -400,6 +395,7 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
