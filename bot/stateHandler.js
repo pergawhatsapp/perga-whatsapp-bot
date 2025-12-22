@@ -368,11 +368,22 @@ async function handleMessage(from, body, req) {
     }
 
     await supabase.from('orders').insert({
-      phone,
-      business_name: state.account.business_name,
-      items: state.order.items,
-      total: state.order.total,
-      created_at: new Date()
+  phone,
+  business_name: state.account.business_name,
+  items: state.order.items.map(i => ({
+    key: i.key,
+    name: lang === 'es' ? i.es : i.en,
+    qty: i.qty,
+    cases: i.qty,
+    units_per_case: 24,
+    price: i.price,
+    line_total: i.qty * i.price
+  })),
+  subtotal: state.order.subtotal,
+  tax: state.order.tax,
+  total: state.order.total,
+  total_cases: state.order.totalCases,
+  created_at: new Date()
     });
 
     await resetState(phone);
@@ -389,6 +400,7 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
