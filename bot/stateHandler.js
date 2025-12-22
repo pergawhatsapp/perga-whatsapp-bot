@@ -407,9 +407,11 @@ if (error || !order) {
   twiml.message(t(lang,
     'There was an error saving your order. Please try again.',
     'Hubo un error guardando su pedido. Intente nuevamente.'
-  ));
+    )              
+   );
   return twiml.toString();;
-
+}
+  
     const orderItems = state.order.items
       .filter(i => i.qty > 0)
       .map(i => ({
@@ -419,7 +421,9 @@ if (error || !order) {
         qty: i.qty,
         units: i.qty * 24,
         price: i.price
-      }));
+      )
+    );
+ }
 
     const { error: itemsError } = await supabase
       .from('order_items')
@@ -445,4 +449,5 @@ if (error || !order) {
 module.exports = { handleMessage };
 
 }
+
 
