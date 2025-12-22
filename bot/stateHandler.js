@@ -389,19 +389,26 @@ async function handleMessage(from, body, req) {
     }
 
     const { data: order, error } = await supabase
-      .from('orders')
-      .insert({
-        phone,
-        business_name: state.account.business_name,
-        tax: state.order.tax,
-        total: state.order.total,
-        total_cases: state.order.totalCases,
-        created_at: new Date()
-      })
-      .select()
-      .single();
+  .from('orders')
+  .insert({
+    phone,
+    business_name: state.account.business_name,
+    items: state.order.items, // ✅ REQUIRED FIX
+    tax: state.order.tax,
+    total: state.order.total,
+    total_cases: state.order.totalCases,
+    created_at: new Date()
+  })
+  .select()
+  .single();
 
-    if (error) console.error('ORDER INSERT ERROR:', error);
+if (error || !order) {
+  console.error('ORDER INSERT ERROR:', error);
+  twiml.message(t(lang,
+    'There was an error saving your order. Please try again.',
+    'Hubo un error guardando su pedido. Intente nuevamente.'
+  ));
+  return twiml.toString();;
 
     const orderItems = state.order.items
       .filter(i => i.qty > 0)
@@ -436,3 +443,4 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
