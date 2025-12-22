@@ -277,7 +277,7 @@ async function handleMessage(from, body, req) {
       ...state,
       account: { ...state.account, alcohol_license_number: body.trim() },
       step: 'SAVE_ACCOUNT'
-    });
+    );
 
     twiml.message(t(lang, 'Saving account… Type OK', 'Guardando cuenta… Escriba OK'));
     return twiml.toString();
@@ -407,9 +407,9 @@ if (error || !order) {
   twiml.message(t(lang,
     'There was an error saving your order. Please try again.',
     'Hubo un error guardando su pedido. Intente nuevamente.'
-    )              
-   );
-  return twiml.toString();;
+    ));
+  
+  return twiml.toString();
 }
   
     const orderItems = state.order.items
@@ -421,9 +421,7 @@ if (error || !order) {
         qty: i.qty,
         units: i.qty * 24,
         price: i.price
-      )
-    );
- }
+    }));
 
     const { error: itemsError } = await supabase
       .from('order_items')
@@ -447,7 +445,3 @@ if (error || !order) {
 }
 
 module.exports = { handleMessage };
-
-}
-
-
