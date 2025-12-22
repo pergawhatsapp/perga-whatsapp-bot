@@ -388,41 +388,70 @@ async function handleMessage(from, body, req) {
     return twiml.toString();
   }
 
-  // ✅ First, ensure business exists and get its ID
-  const { data: business } = await supabase
+  // ✅ FIXED: Look up business by phone only (since one phone = one business)
+  const { data: business, error: businessError } = await supabase
     .from('businesses')
-    .select('id, business_name, email, contact_name, address, tax_id, tax_type, alcohol_license')
+    .select('id, business_name, email, contact_name, address, tax_id, tax_type, alcohol_license, alcohol_license_number')
     .eq('phone', phone)
-    .eq('business_name', state.account.business_name)
     .maybeSingle();
 
   if (!business) {
-    console.error('Business not found for phone:', phone);
-    twiml.message(t(lang,
-      'Business account error. Please try again.',
-      'Error en cuenta. Intente nuevamente.'
-    ));
-    return twiml.toString();
+    console.error('❌ Business not found for phone:', phone);
+    console.error('Business error:', businessError);
+    
+    // ✅ Try to re-save the business if it somehow got lost
+    if (state.account && state.account.business_name) {
+      console.log('🔄 Attempting to re-save business...');
+      const { data: newBusiness, error: insertError } = await supabase
+        .from('businesses')
+        .upsert(state.account)
+        .select()
+        .single();
+      
+      if (insertError) {
+        console.error('❌ Failed to save business:', insertError);
+        twiml.message(t(lang,
+          'Business account error. Please start over by typing "order".',
+          'Error en cuenta. Por favor escriba "orden" para empezar de nuevo.'
+        ));
+        await resetState(phone);
+        return twiml.toString();
+      }
+      
+      // Use the newly created business
+      business = newBusiness;
+      console.log('✅ Business re-saved successfully:', business.id);
+    } else {
+      twiml.message(t(lang,
+        'Business account error. Please start over by typing "order".',
+        'Error en cuenta. Por favor escriba "orden" para empezar de nuevo.'
+      ));
+      await resetState(phone);
+      return twiml.toString();
+    }
   }
+
+  console.log('✅ Business found:', business.id, business.business_name);
 
   // ✅ Create order with business_id
   const { data: order, error } = await supabase
     .from('orders')
     .insert({
-      business_id: business.id, // ✅ ADD THIS
+      business_id: business.id,
       phone,
       business_name: business.business_name,
       items: state.order.items,
       tax: state.order.tax,
       total: state.order.total,
       total_cases: state.order.totalCases,
+      status: 'pending',
       created_at: new Date()
     })
     .select()
     .single();
 
   if (error || !order) {
-    console.error('ORDER INSERT ERROR:', error);
+    console.error('❌ ORDER INSERT ERROR:', error);
     twiml.message(t(lang,
       'There was an error saving your order. Please try again.',
       'Hubo un error guardando su pedido. Intente nuevamente.'
@@ -430,6 +459,9 @@ async function handleMessage(from, body, req) {
     return twiml.toString();
   }
 
+  console.log('✅ Order created:', order.id);
+
+  // ✅ Insert order items
   const orderItems = state.order.items
     .filter(i => i.qty > 0)
     .map(i => ({
@@ -446,29 +478,33 @@ async function handleMessage(from, body, req) {
     .insert(orderItems);
 
   if (itemsError) {
-    console.error('ORDER ITEMS INSERT ERROR:', itemsError);
+    console.error('❌ ORDER ITEMS INSERT ERROR:', itemsError);
+  } else {
+    console.log('✅ Order items inserted:', orderItems.length);
   }
 
   // ✅ Sync to Google Sheets
   try {
+    console.log('📊 Attempting to sync order', order.id, 'to Google Sheets...');
+    
     const { data: syncResult, error: syncError } = await supabase
       .rpc('sync_order_to_sheets', { order_id_param: order.id });
     
     if (syncError) {
-      console.error('GOOGLE SHEETS SYNC ERROR:', syncError);
+      console.error('❌ GOOGLE SHEETS SYNC ERROR:', syncError);
     } else {
       console.log('✅ Google Sheets sync successful:', syncResult);
     }
   } catch (syncErr) {
-    console.error('GOOGLE SHEETS SYNC EXCEPTION:', syncErr);
+    console.error('❌ GOOGLE SHEETS SYNC EXCEPTION:', syncErr);
   }
 
   await resetState(phone);
 
   twiml.message(
     t(lang,
-      '✅ Invoice will be sent to your email.\nA sales representative will contact you.\nThank you for choosing Perga!',
-      '✅ La factura será enviada a su correo.\nUn representante se comunicará con usted.\n¡Gracias por elegir Perga!'
+      `✅ Order #${order.id} confirmed!\n\nInvoice will be sent to ${business.email}.\nA sales representative will contact you.\n\nThank you for choosing Perga!`,
+      `✅ Orden #${order.id} confirmada!\n\nLa factura será enviada a ${business.email}.\nUn representante se comunicará con usted.\n\n¡Gracias por elegir Perga!`
     )
   );
   return twiml.toString();
@@ -479,6 +515,7 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
