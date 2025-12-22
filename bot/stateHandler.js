@@ -122,7 +122,7 @@ async function handleMessage(from, body, req) {
     }
 
     await saveState(phone, { ...state, account: data, step: 'PRODUCTS' });
-    twiml.message(t(lang, 'Account loaded. Let’s order.', 'Cuenta cargada.'));
+    twiml.message(t(lang, 'Account loaded. Let’s order. (Type ok)', 'Cuenta cargada. (Escribe ok)'));
     return twiml.toString();
   }
 
@@ -400,6 +400,7 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
