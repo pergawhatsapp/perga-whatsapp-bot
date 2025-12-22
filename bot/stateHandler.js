@@ -388,11 +388,30 @@ async function handleMessage(from, body, req) {
     return twiml.toString();
   }
 
+  // ✅ First, ensure business exists and get its ID
+  const { data: business } = await supabase
+    .from('businesses')
+    .select('id, business_name, email, contact_name, address, tax_id, tax_type, alcohol_license')
+    .eq('phone', phone)
+    .eq('business_name', state.account.business_name)
+    .maybeSingle();
+
+  if (!business) {
+    console.error('Business not found for phone:', phone);
+    twiml.message(t(lang,
+      'Business account error. Please try again.',
+      'Error en cuenta. Intente nuevamente.'
+    ));
+    return twiml.toString();
+  }
+
+  // ✅ Create order with business_id
   const { data: order, error } = await supabase
     .from('orders')
     .insert({
+      business_id: business.id, // ✅ ADD THIS
       phone,
-      business_name: state.account.business_name,
+      business_name: business.business_name,
       items: state.order.items,
       tax: state.order.tax,
       total: state.order.total,
@@ -430,7 +449,7 @@ async function handleMessage(from, body, req) {
     console.error('ORDER ITEMS INSERT ERROR:', itemsError);
   }
 
-  // ✅ NEW: Sync to Google Sheets after order_items are inserted
+  // ✅ Sync to Google Sheets
   try {
     const { data: syncResult, error: syncError } = await supabase
       .rpc('sync_order_to_sheets', { order_id_param: order.id });
@@ -460,6 +479,7 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
