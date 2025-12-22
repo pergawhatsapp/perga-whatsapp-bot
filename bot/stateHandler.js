@@ -277,6 +277,7 @@ async function handleMessage(from, body, req) {
       ...state,
       account: { ...state.account, alcohol_license_number: body.trim() },
       step: 'SAVE_ACCOUNT'
+    });      
 
     twiml.message(t(lang, 'Saving account… Type OK', 'Guardando cuenta… Escriba OK'));
     return twiml.toString();
@@ -349,7 +350,7 @@ async function handleMessage(from, body, req) {
   }
 }
 
-    if (totalCases < 10) 
+    if (totalCases < 10) {
       await resetState(phone);
       twiml.message(t(lang, 'Minimum order is 10 cases.', 'Pedido mínimo: 10 cajas.'));
       return twiml.toString();
@@ -443,4 +444,5 @@ if (error || !order) {
 }
 
 module.exports = { handleMessage };
+
 
