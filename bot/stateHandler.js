@@ -75,7 +75,7 @@ async function handleMessage(from, body, req) {
       return twiml.toString();
     }
 
-    twiml.message('Send "order" or "orden" to start.');
+    twiml.message('Send "order" to start / Escribe "orden" para comenzar.');
     return twiml.toString();
   }
 
@@ -389,6 +389,7 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
