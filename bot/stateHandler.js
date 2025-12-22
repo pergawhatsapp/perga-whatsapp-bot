@@ -444,4 +444,5 @@ if (error || !order) {
 
 module.exports = { handleMessage };
 
+}
 
