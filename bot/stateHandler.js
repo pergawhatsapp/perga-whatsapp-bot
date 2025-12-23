@@ -288,22 +288,29 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'SAVE_ACCOUNT') {
-    console.log('💾 Saving business to Supabase:', state.account);
-    const { data: savedBusiness, error: saveError } = await supabase
-      .from('businesses')
-      .upsert(state.account)
-      .select()
-      .single();
-    
-    if (saveError) {
-      console.error('❌ Error saving business:', saveError);
-    } else {
-      console.log('✅ Business saved successfully:', savedBusiness);
-    }
-    
-    await saveState(phone, { ...state, step: 'PRODUCTS' });
-    twiml.message(t(lang, 'Starting order… Type OK', 'Iniciando pedido… Escriba OK'));
+  console.log('💾 Attempting to save business. Account data:', JSON.stringify(state.account, null, 2));
+  
+  const { data: savedBusiness, error: saveError } = await supabase
+    .from('businesses')
+    .upsert(state.account, { onConflict: 'phone' })
+    .select()
+    .single();
+  
+  if (saveError) {
+    console.error('❌ CRITICAL ERROR saving business:', saveError);
+    console.error('❌ Account data that failed:', state.account);
+    twiml.message(t(lang, 
+      'Error saving account. Please try again.',
+      'Error guardando cuenta. Intente nuevamente.'
+    ));
     return twiml.toString();
+  }
+  
+  console.log('✅ Business saved successfully:', savedBusiness);
+  
+  await saveState(phone, { ...state, step: 'PRODUCTS' });
+  twiml.message(t(lang, 'Starting order… Type OK', 'Iniciando pedido… Escriba OK'));
+  return twiml.toString();
   }
 
   // =====================
@@ -535,3 +542,4 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
