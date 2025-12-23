@@ -2,6 +2,10 @@ const twilio = require('twilio');
 const MessagingResponse = twilio.twiml.MessagingResponse;
 const supabase = require('../services/supabaseClient');
 
+// 🔍 DEBUG: Log Supabase connection info
+console.log('🔍 SUPABASE_URL:', process.env.SUPABASE_URL);
+console.log('🔍 Supabase Project ID:', process.env.SUPABASE_URL ? process.env.SUPABASE_URL.split('.')[0].replace('https://', '') : 'NOT SET');
+
 // =====================
 // PRODUCTS
 // =====================
@@ -284,7 +288,19 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'SAVE_ACCOUNT') {
-    await supabase.from('businesses').upsert(state.account);
+    console.log('💾 Saving business to Supabase:', state.account);
+    const { data: savedBusiness, error: saveError } = await supabase
+      .from('businesses')
+      .upsert(state.account)
+      .select()
+      .single();
+    
+    if (saveError) {
+      console.error('❌ Error saving business:', saveError);
+    } else {
+      console.log('✅ Business saved successfully:', savedBusiness);
+    }
+    
     await saveState(phone, { ...state, step: 'PRODUCTS' });
     twiml.message(t(lang, 'Starting order… Type OK', 'Iniciando pedido… Escriba OK'));
     return twiml.toString();
@@ -340,16 +356,16 @@ async function handleMessage(from, body, req) {
     let totalCases = 0;
     let summary = [];
 
-  for (const i of items) {
-   if (i.qty > 0) {
-    const line = i.qty * i.price;
-    subtotal += line;
-    totalCases += i.qty;
-    summary.push(
-      `${lang === 'es' ? i.es : i.en} — ${i.qty} x $${i.price.toFixed(2)} = $${line.toFixed(2)}`
-    );
-  }
-}
+    for (const i of items) {
+      if (i.qty > 0) {
+        const line = i.qty * i.price;
+        subtotal += line;
+        totalCases += i.qty;
+        summary.push(
+          `${lang === 'es' ? i.es : i.en} — ${i.qty} x $${i.price.toFixed(2)} = $${line.toFixed(2)}`
+        );
+      }
+    }
 
     if (totalCases < 10) {
       await resetState(phone);
@@ -382,34 +398,48 @@ async function handleMessage(from, body, req) {
   }
 
   if (state.step === 'CONFIRM') {
-  if (!isYes(msg)) {
-    await resetState(phone);
-    twiml.message(t(lang, 'Order cancelled.', 'Pedido cancelado.'));
-    return twiml.toString();
-  }
+    if (!isYes(msg)) {
+      await resetState(phone);
+      twiml.message(t(lang, 'Order cancelled.', 'Pedido cancelado.'));
+      return twiml.toString();
+    }
 
-  // ✅ FIXED: Look up business by phone only (since one phone = one business)
-  let { data: business, error: businessError } = await supabase
-    .from('businesses')
-    .select('id, business_name, email, contact_name, address, tax_id, tax_type, alcohol_license, alcohol_license_number')
-    .eq('phone', phone)
-    .maybeSingle();
+    console.log('🔍 CONFIRM step - Looking up business for phone:', phone);
+    console.log('🔍 Using Supabase URL:', process.env.SUPABASE_URL);
 
-  if (!business) {
-    console.error('❌ Business not found for phone:', phone);
-    console.error('Business error:', businessError);
-    
-    // ✅ Try to re-save the business if it somehow got lost
-    if (state.account && state.account.business_name) {
-      console.log('🔄 Attempting to re-save business...');
-      const { data: newBusiness, error: insertError } = await supabase
-        .from('businesses')
-        .upsert(state.account)
-        .select()
-        .single();
+    // ✅ Look up business by phone only
+    let { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('id, business_name, email, contact_name, address, tax_id, tax_type, alcohol_license, alcohol_license_number')
+      .eq('phone', phone)
+      .maybeSingle();
+
+    if (!business) {
+      console.error('❌ Business not found for phone:', phone);
+      console.error('Business error:', businessError);
       
-      if (insertError) {
-        console.error('❌ Failed to save business:', insertError);
+      // ✅ Try to re-save the business
+      if (state.account && state.account.business_name) {
+        console.log('🔄 Attempting to re-save business...');
+        const { data: newBusiness, error: insertError } = await supabase
+          .from('businesses')
+          .upsert(state.account)
+          .select()
+          .single();
+        
+        if (insertError) {
+          console.error('❌ Failed to save business:', insertError);
+          twiml.message(t(lang,
+            'Business account error. Please start over by typing "order".',
+            'Error en cuenta. Por favor escriba "orden" para empezar de nuevo.'
+          ));
+          await resetState(phone);
+          return twiml.toString();
+        }
+        
+        business = newBusiness;
+        console.log('✅ Business re-saved successfully:', business.id);
+      } else {
         twiml.message(t(lang,
           'Business account error. Please start over by typing "order".',
           'Error en cuenta. Por favor escriba "orden" para empezar de nuevo.'
@@ -417,97 +447,87 @@ async function handleMessage(from, body, req) {
         await resetState(phone);
         return twiml.toString();
       }
-      
-      // Use the newly created business
-      business = newBusiness;
-      console.log('✅ Business re-saved successfully:', business.id);
-    } else {
+    }
+
+    console.log('✅ Business found:', business.id, business.business_name);
+
+    // ✅ Create order with business_id
+    const { data: order, error } = await supabase
+      .from('orders')
+      .insert({
+        business_id: business.id,
+        phone,
+        business_name: business.business_name,
+        items: state.order.items,
+        tax: state.order.tax,
+        total: state.order.total,
+        total_cases: state.order.totalCases,
+        status: 'pending',
+        created_at: new Date()
+      })
+      .select()
+      .single();
+
+    if (error || !order) {
+      console.error('❌ ORDER INSERT ERROR:', error);
       twiml.message(t(lang,
-        'Business account error. Please start over by typing "order".',
-        'Error en cuenta. Por favor escriba "orden" para empezar de nuevo.'
+        'There was an error saving your order. Please try again.',
+        'Hubo un error guardando su pedido. Intente nuevamente.'
       ));
-      await resetState(phone);
       return twiml.toString();
     }
-  }
 
-  console.log('✅ Business found:', business.id, business.business_name);
+    console.log('✅ Order created:', order.id);
 
-  // ✅ Create order with business_id
-  const { data: order, error } = await supabase
-    .from('orders')
-    .insert({
-      business_id: business.id,
-      phone,
-      business_name: business.business_name,
-      items: state.order.items,
-      tax: state.order.tax,
-      total: state.order.total,
-      total_cases: state.order.totalCases,
-      status: 'pending',
-      created_at: new Date()
-    })
-    .select()
-    .single();
+    // ✅ Insert order items
+    const orderItems = state.order.items
+      .filter(i => i.qty > 0)
+      .map(i => ({
+        order_id: order.id,
+        product_key: i.key,
+        product_name: i.en,
+        qty: i.qty,
+        units: i.qty * 24,
+        price: i.price
+      }));
 
-  if (error || !order) {
-    console.error('❌ ORDER INSERT ERROR:', error);
-    twiml.message(t(lang,
-      'There was an error saving your order. Please try again.',
-      'Hubo un error guardando su pedido. Intente nuevamente.'
-    ));
-    return twiml.toString();
-  }
+    const { error: itemsError } = await supabase
+      .from('order_items')
+      .insert(orderItems);
 
-  console.log('✅ Order created:', order.id);
-
-  // ✅ Insert order items
-  const orderItems = state.order.items
-    .filter(i => i.qty > 0)
-    .map(i => ({
-      order_id: order.id,
-      product_key: i.key,
-      product_name: i.en,
-      qty: i.qty,
-      units: i.qty * 24,
-      price: i.price
-    }));
-
-  const { error: itemsError } = await supabase
-    .from('order_items')
-    .insert(orderItems);
-
-  if (itemsError) {
-    console.error('❌ ORDER ITEMS INSERT ERROR:', itemsError);
-  } else {
-    console.log('✅ Order items inserted:', orderItems.length);
-  }
-
-  // ✅ Sync to Google Sheets
-  try {
-    console.log('📊 Attempting to sync order', order.id, 'to Google Sheets...');
-    
-    const { data: syncResult, error: syncError } = await supabase
-      .rpc('sync_order_to_sheets', { order_id_param: order.id });
-    
-    if (syncError) {
-      console.error('❌ GOOGLE SHEETS SYNC ERROR:', syncError);
+    if (itemsError) {
+      console.error('❌ ORDER ITEMS INSERT ERROR:', itemsError);
     } else {
-      console.log('✅ Google Sheets sync successful:', syncResult);
+      console.log('✅ Order items inserted:', orderItems.length);
     }
-  } catch (syncErr) {
-    console.error('❌ GOOGLE SHEETS SYNC EXCEPTION:', syncErr);
-  }
 
-  await resetState(phone);
+    // ✅ Sync to Google Sheets
+    try {
+      console.log('📊 Attempting to sync order', order.id, 'to Google Sheets...');
+      console.log('🔍 Calling RPC on Supabase URL:', process.env.SUPABASE_URL);
+      
+      const { data: syncResult, error: syncError } = await supabase
+        .rpc('sync_order_to_sheets', { order_id_param: order.id });
+      
+      if (syncError) {
+        console.error('❌ GOOGLE SHEETS SYNC ERROR:', syncError);
+        console.error('❌ Full error details:', JSON.stringify(syncError, null, 2));
+      } else {
+        console.log('✅ Google Sheets sync successful:', syncResult);
+      }
+    } catch (syncErr) {
+      console.error('❌ GOOGLE SHEETS SYNC EXCEPTION:', syncErr);
+    }
 
-  twiml.message(
-    t(lang,
-      `✅ Order #${order.id} confirmed!\n\nInvoice will be sent to ${business.email}.\nA sales representative will contact you.\n\nThank you for choosing Perga!`,
-      `✅ Orden #${order.id} confirmada!\n\nLa factura será enviada a ${business.email}.\nUn representante se comunicará con usted.\n\n¡Gracias por elegir Perga!`
-    )
-  );
-  return twiml.toString();
+    await resetState(phone);
+
+    twiml.message(
+      t(lang,
+        `✅ Order #${order.id} confirmed!\n\nInvoice will be sent to ${business.email}.\nA sales representative will contact you.\n\nThank you for choosing Perga!`,
+        `✅ Orden #${order.id} confirmada!\n\nLa factura será enviada a ${business.email}.\nUn representante se comunicará con usted.\n\n¡Gracias por elegir Perga!`
+      )
+    );
+    return twiml.toString();
   }
 
   twiml.message('Send "order" to start again., Escribe "orden" para iniciar un nuevo pedido.');
@@ -515,10 +535,3 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
-
-
-
-
-
-
-
