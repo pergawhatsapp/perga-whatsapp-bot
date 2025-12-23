@@ -389,7 +389,7 @@ async function handleMessage(from, body, req) {
   }
 
   // ✅ FIXED: Look up business by phone only (since one phone = one business)
-  const { data: business, error: businessError } = await supabase
+  let { data: business, error: businessError } = await supabase
     .from('businesses')
     .select('id, business_name, email, contact_name, address, tax_id, tax_type, alcohol_license, alcohol_license_number')
     .eq('phone', phone)
@@ -515,6 +515,7 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
 
