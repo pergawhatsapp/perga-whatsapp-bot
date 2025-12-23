@@ -292,7 +292,7 @@ async function handleMessage(from, body, req) {
   
   const { data: savedBusiness, error: saveError } = await supabase
     .from('businesses')
-    .upsert(state.account, { onConflict: 'phone' })
+    .upsert(state.account)  // ✅ Removed onConflict, will use the unique constraint
     .select()
     .single();
   
@@ -542,4 +542,5 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
