@@ -508,24 +508,6 @@ async function handleMessage(from, body, req) {
       console.log('✅ Order items inserted:', orderItems.length);
     }
 
-    // ✅ Sync to Google Sheets
-    try {
-      console.log('📊 Attempting to sync order', order.id, 'to Google Sheets...');
-      console.log('🔍 Calling RPC on Supabase URL:', process.env.SUPABASE_URL);
-      
-      const { data: syncResult, error: syncError } = await supabase
-        .rpc('sync_order_to_sheets', { order_id_param: order.id });
-      
-      if (syncError) {
-        console.error('❌ GOOGLE SHEETS SYNC ERROR:', syncError);
-        console.error('❌ Full error details:', JSON.stringify(syncError, null, 2));
-      } else {
-        console.log('✅ Google Sheets sync successful:', syncResult);
-      }
-    } catch (syncErr) {
-      console.error('❌ GOOGLE SHEETS SYNC EXCEPTION:', syncErr);
-    }
-
     await resetState(phone);
 
     twiml.message(
@@ -542,5 +524,6 @@ async function handleMessage(from, body, req) {
 }
 
 module.exports = { handleMessage };
+
 
 
